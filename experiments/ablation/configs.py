@@ -27,6 +27,7 @@ class AblationConfig:
         cross_attention: 交叉注意力层数
     """
     name: str = "custom"
+    description: str = ""
     multi_scale: bool = True
     gate: Optional[str] = 'se'
     transformer: bool = True

@@ -54,7 +54,7 @@ class TestDatasetConfig:
 
         iq_ds = next((ds for ds in DATASETS if 'iq-othnccd' in ds['slug'].lower()), None)
         assert iq_ds is not None, "应包含IQ-OTHNCCD数据集"
-        assert 'mohammadamiresmaili' in iq_ds['slug']
+        assert 'subhajeetdas' in iq_ds['slug']
 
     def test_lung_colon_dataset_config(self):
         """验证Lung and Colon Cancer数据集配置正确"""
@@ -451,7 +451,7 @@ class TestDownloadSkipLogic:
         """验证已存在目录时跳过下载"""
         from scripts.download_datasets import download_dataset
 
-        with patch('scripts.download_datasets.subprocess.run') as mock_run:
+        with patch('scripts.download_datasets.kagglehub.dataset_download') as mock_download:
             with tempfile.TemporaryDirectory() as tmpdir:
                 target = Path(tmpdir)
                 # 创建一些文件使目录非空
@@ -459,25 +459,29 @@ class TestDownloadSkipLogic:
 
                 result = download_dataset('test/slug', target)
 
-                # 应该跳过，不调用subprocess
-                mock_run.assert_not_called()
+                # 应该跳过，不调用kagglehub下载
+                mock_download.assert_not_called()
                 assert result is True
 
     def test_download_force_overwrites_existing(self):
         """验证force=True时覆盖已存在目录"""
         from scripts.download_datasets import download_dataset
 
-        with patch('scripts.download_datasets.subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stderr='')
-
+        with patch('scripts.download_datasets.kagglehub.dataset_download') as mock_download:
             with tempfile.TemporaryDirectory() as tmpdir:
-                target = Path(tmpdir)
+                fake_download = Path(tmpdir) / 'fake_download'
+                fake_download.mkdir()
+                (fake_download / 'data.txt').write_text('fake')
+                mock_download.return_value = str(fake_download)
+
+                target = Path(tmpdir) / 'target'
+                target.mkdir()
                 (target / 'existing.txt').write_text('data')
 
                 result = download_dataset('test/slug', target, force=True)
 
-                # 应该调用subprocess进行下载
-                mock_run.assert_called_once()
+                # 应该调用kagglehub进行下载
+                mock_download.assert_called_once()
                 assert result is True
 
 
