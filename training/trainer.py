@@ -294,7 +294,7 @@ class Trainer:
         )
 
         # 设置混合精度训练
-        self.scaler = torch.cuda.amp.GradScaler() if self.config.use_amp else None
+        self.scaler = torch.amp.GradScaler('cuda') if self.config.use_amp else None
 
     def train_epoch(self) -> Tuple[float, float]:
         """
@@ -315,7 +315,7 @@ class Trainer:
 
             # 混合精度训练
             if self.config.use_amp and self.scaler is not None:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     outputs = self.model(images)
                     loss = self.criterion(outputs, targets)
 
@@ -372,7 +372,7 @@ class Trainer:
 
             # 混合精度推理
             if self.config.use_amp and self.scaler is not None:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     outputs = self.model(images)
                     loss = self.criterion(outputs, targets)
             else:
