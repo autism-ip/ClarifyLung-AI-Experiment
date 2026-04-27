@@ -93,17 +93,27 @@ pip install -r requirements.txt
 
 ### 数据准备
 
+```bash
+# 方式1: 设置环境变量（推荐，远程部署零代码修改）
+export LUNG_DATASET_DIR=/path/to/your/datasets
+
+# 方式2: 直接放置到项目 datasets/ 目录（本地开发）
+```
+
 ```python
 from data.custom_dataset import CustomLungDataset, merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 
-# 加载三个数据集
-dataset1 = CustomLungDataset('/path/to/dataset1', 'dataset1', transform=train_transform)
-dataset2 = CustomLungDataset('/path/to/dataset2', 'dataset2', transform=train_transform)
-dataset3 = CustomLungDataset('/path/to/dataset3', 'dataset3', transform=train_transform)
+# 数据集路径自动从 configs/dataset_config.py 解析
+# 优先 LUNG_DATASET_DIR 环境变量，回退到项目本地 datasets/
+from configs import DATASET_PATHS
+
+dataset1 = CustomLungDataset(DATASET_PATHS['dataset1'], 'dataset1', transform=train_transform)
+dataset2 = CustomLungDataset(DATASET_PATHS['dataset2'], 'dataset2', transform=train_transform)
+dataset3 = CustomLungDataset(DATASET_PATHS['dataset3'], 'dataset3', transform=train_transform)
 
 # 合并数据集
-combined_dataset = merge_datasets('/path/to/dataset1', '/path/to/dataset2', '/path/to/dataset3')
+combined_dataset = merge_datasets(DATASET_PATHS['dataset1'], DATASET_PATHS['dataset2'], DATASET_PATHS['dataset3'])
 ```
 
 ### 模型训练

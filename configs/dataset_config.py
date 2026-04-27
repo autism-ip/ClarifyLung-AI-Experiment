@@ -2,31 +2,39 @@
 # 数据集配置
 # =============================================================================
 """
-[INPUT]: 数据集根目录路径
-[OUTPUT]: 数据集路径配置字典
-[POS]: configs/ 数据集路径配置
+[INPUT]: 环境变量 LUNG_DATASET_DIR (可选), 或本地 datasets/ 目录
+[OUTPUT]: 数据集路径配置字典 DATASET_PATHS, DATASET_INFO, 标签映射
+[POS]: configs/ 数据集路径配置中心, 被 data/custom_dataset.py 和 scripts/* 消费
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+import os
 from pathlib import Path
+
+# =============================================================================
+# 数据集根目录解析
+# =============================================================================
+# 优先从环境变量读取，未设置则回退到项目本地 datasets/
+# 远程部署时只需: export LUNG_DATASET_DIR=/your/path
+
+_BASE_DIR = os.environ.get("LUNG_DATASET_DIR", str(Path(__file__).parent.parent / "datasets"))
 
 # =============================================================================
 # 数据集路径配置
 # =============================================================================
-# TODO: 将以下路径替换为你的实际数据集路径
 
 DATASET_PATHS = {
     # Dataset 1: IQ-OTHNCCD Lung Cancer Dataset
     # 结构: root/Augmented IQ-OTHNCCD lung cancer dataset/{Normal cases,Malignant cases,Benign cases}/
-    "dataset1": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/IQ-OTHNCCD",
+    "dataset1": os.path.join(_BASE_DIR, "IQ-OTHNCCD"),
 
     # Dataset 2: Lung and Colon Cancer Histopathological Images
     # 结构: root/lung_colon_image_set/lung_image_sets/{lung_n,lung_aca,lung_scc}/
-    "dataset2": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/LungColon",
+    "dataset2": os.path.join(_BASE_DIR, "LungColon"),
 
     # Dataset 3: Lung Cancer 4 Types Image Dataset
     # 结构: root/Data/{train,valid,test}/{class_subdir}/  (class_subdir含肿瘤位置信息)
-    "dataset3": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/Lung4Types",
+    "dataset3": os.path.join(_BASE_DIR, "Lung4Types"),
 }
 
 # =============================================================================
