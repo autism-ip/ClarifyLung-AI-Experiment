@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# PyTorch
+*.pth
+*.pt
+
+# Outputs (runtime artifacts)
+outputs/
+outputs/checkpoints/
+outputs/logs/
+outputs/figures/
+outputs/slurm/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.claude/settings.local.json

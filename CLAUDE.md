@@ -59,7 +59,7 @@ Python + PyTorch + torchvision + timm + albumentations
 ├── docs/              # 文档资料模块
 ├── CLAUDE.md          # 项目宪法
 ├── requirements.txt   # Python依赖
-└── model.py           # 主模型文件 (单一文件版本)
+└── model.py           # 兼容入口，从 models 包 re-export
 ```
 
 ## 数据集说明

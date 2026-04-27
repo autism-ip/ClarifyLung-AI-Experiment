@@ -24,11 +24,15 @@
 # =============================================================================
 # 实验配置（根据需要修改）
 # =============================================================================
+# 快速测试模式（调试时用）: EPOCHS=2 BATCH_SIZE=4
 EPOCHS=50
 BATCH_SIZE=32
 LR=1e-4
 TRANSFORMER_LR=5e-4
 OUTPUT_DIR="outputs/benchmark"
+
+# 确保输出目录存在
+mkdir -p outputs/slurm "${OUTPUT_DIR}"
 
 # =============================================================================
 # 运行实验
@@ -41,12 +45,14 @@ echo "GPU: $SLURM_JOB_PARTITION"
 echo "时间: $(date)"
 echo "=========================================="
 
+# 集群无图形界面，添加 --no-plot 跳过 matplotlib 绘图
 python scripts/benchmark_experiment.py \
   --epochs ${EPOCHS} \
   --batch-size ${BATCH_SIZE} \
   --lr ${LR} \
   --transformer-lr ${TRANSFORMER_LR} \
-  --output-dir ${OUTPUT_DIR}
+  --output-dir ${OUTPUT_DIR} \
+  --no-plot
 
 echo "=========================================="
 echo "实验完成: $(date)"
