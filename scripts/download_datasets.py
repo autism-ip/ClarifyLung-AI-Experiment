@@ -4,6 +4,72 @@ Kaggle数据集下载脚本
 [OUTPUT]: Downloaded and extracted datasets
 [POS]: scripts/ Kaggle数据集下载脚本，被 tests/test_download_datasets.py 验证
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+================================================================================
+手动下载指南 (当Kaggle API不可用时)
+================================================================================
+
+本脚本优先使用 kagglehub 自动下载。若因网络、认证或地区限制导致自动下载失败，
+请按以下步骤手动下载并放置到对应目录。
+
+--- Dataset 0: IQ-OTHNCCD Lung Cancer Dataset ----------------------------------
+来源: https://www.kaggle.com/datasets/subhajeetdas/iq-othnccd-lung-cancer-dataset-augmented
+步骤:
+  1. 访问上述Kaggle页面
+  2. 点击 "Download" 获取压缩包
+  3. 解压到: datasets/IQ-OTHNCCD/
+期望目录结构:
+  datasets/IQ-OTHNCCD/
+  └── Augmented IQ-OTHNCCD lung cancer dataset/
+      ├── Normal cases/
+      ├── Malignant cases/
+      └── Benign cases/
+
+--- Dataset 1: Lung and Colon Cancer Histopathological Images ------------------
+来源: https://www.kaggle.com/datasets/andrewmvd/lung-and-colon-cancer-histopathological-images
+步骤:
+  1. 访问上述Kaggle页面
+  2. 点击 "Download" 获取压缩包
+  3. 解压到: datasets/LungColon/
+期望目录结构:
+  datasets/LungColon/
+  └── lung_colon_image_set/
+      └── lung_image_sets/
+          ├── lung_n/          (正常肺组织)
+          ├── lung_aca/        (肺腺癌)
+          └── lung_scc/        (肺鳞状细胞癌)
+      └── colon_image_sets/    (本项目不使用结肠部分)
+
+--- Dataset 2: Lung Cancer 4 Types Image Dataset -------------------------------
+来源: https://www.kaggle.com/datasets/sanjeevjangir/lung-cancer-4-types-image-dataset
+步骤:
+  1. 访问上述Kaggle页面
+  2. 点击 "Download" 获取压缩包
+  3. 解压到: datasets/Lung4Types/
+期望目录结构:
+  datasets/Lung4Types/
+  └── Data/
+      ├── train/
+      │   ├── normal/
+      │   ├── adenocarcinoma_left.lower.lobe_T2_N0_M0_Ib/
+      │   ├── large.cell.carcinoma_left.hilum_T2_N2_M0_IIIa/
+      │   └── squamous.cell.carcinoma_left.hilum_T1_N2_M0_IIIa/
+      ├── valid/
+      │   └── ... (同上4类)
+      └── test/
+          ├── normal/
+          ├── adenocarcinoma/
+          ├── large.cell.carcinoma/
+          └── squamous.cell.carcinoma/
+
+================================================================================
+兼容性说明
+================================================================================
+data/custom_dataset.py 已做自适应路径探测，兼容以下两种传入方式:
+  A) 传入数据集根目录 (如 datasets/IQ-OTHNCCD/)
+  B) 传入深层目录 (如 datasets/IQ-OTHNCCD/Augmented IQ-OTHNCCD lung cancer dataset/)
+推荐方式 A，让加载器自动探测子目录。
+================================================================================
 """
 
 import os
