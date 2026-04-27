@@ -117,15 +117,26 @@ class CustomLungDataset(Dataset):
     def _load_dataset1(self):
         """
         加载Dataset 1 (IQ-OTHNCCD)
-        结构: root/Normal cases/, root/Malignant cases/, root/Benign cases/
+        期望结构: root/Normal cases/, root/Malignant cases/, root/Benign cases/
+        实际Kaggle结构: root/Augmented IQ-OTHNCCD lung cancer dataset/{Normal cases,...}/
+        策略: 自动探测根目录或子目录下的类别文件夹
         """
         classes = ['Normal cases', 'Malignant cases', 'Benign cases']
 
         for class_name in classes:
+            # 尝试直接路径
             class_path = self.root_path / class_name
+            if not class_path.exists():
+                # 尝试在子目录中查找（适配Kaggle下载后的嵌套结构）
+                for subdir in self.root_path.iterdir():
+                    if subdir.is_dir():
+                        candidate = subdir / class_name
+                        if candidate.exists():
+                            class_path = candidate
+                            break
 
             if not class_path.exists():
-                print(f"Warning: {class_path} does not exist, skipping...")
+                print(f"Warning: {class_name} not found under {self.root_path}, skipping...")
                 continue
 
             # 映射到统一标签
@@ -141,16 +152,26 @@ class CustomLungDataset(Dataset):
     def _load_dataset2(self):
         """
         加载Dataset 2 (Lung and Colon Cancer)
-        结构: root/lung_n/, root/lung_aca/, root/lung_scc/
+        期望结构: root/lung_n/, root/lung_aca/, root/lung_scc/
+        实际Kaggle结构: root/lung_colon_image_set/lung_image_sets/{lung_n,lung_aca,lung_scc}/
+        策略: 自动探测根目录或嵌套子目录下的类别文件夹
         """
         classes = ['lung_n', 'lung_aca', 'lung_scc']
 
         for class_name in classes:
+            # 尝试直接路径
             class_path = self.root_path / class_name
-
             if not class_path.exists():
-                print(f"Warning: {class_path} does not exist, skipping...")
-                continue
+                # 深度探测: 最多向下递归2层查找类别目录
+                found = False
+                for subdir in self.root_path.rglob('*'):
+                    if subdir.is_dir() and subdir.name == class_name:
+                        class_path = subdir
+                        found = True
+                        break
+                if not found:
+                    print(f"Warning: {class_name} not found under {self.root_path}, skipping...")
+                    continue
 
             # 映射到统一标签
             unified_label = DATASET2_MAPPING[class_name]
@@ -164,8 +185,9 @@ class CustomLungDataset(Dataset):
     def _load_dataset3(self):
         """
         加载Dataset 3 (Lung Cancer 4 Types)
-        结构: root/{train,valid,test}/{class_subdir}/  (class_subdir以class_name开头)
-        示例: squamous.cell.carcinoma_left.hilum_T1_N2_M0_IIIa/
+        期望结构: root/{train,valid,test}/{class_subdir}/  (class_subdir以class_name开头)
+        实际Kaggle结构: root/Data/{train,valid,test}/{class_subdir}/
+        策略: 自动探测 root/ 或 root/Data/ 下的 split 目录
         """
         splits = ['train', 'val', 'test', 'valid']  # 兼容 'val' 和 'valid'
         # 原始类名前缀 -> 统一标签映射
@@ -176,9 +198,21 @@ class CustomLungDataset(Dataset):
             'squamous.cell.carcinoma': 'benign'
         }
 
+        # 探测 split 根目录: 优先 root/{split}/, 其次 root/Data/{split}/
+        split_roots = [self.root_path]
+        data_subdir = self.root_path / 'Data'
+        if data_subdir.exists() and data_subdir.is_dir():
+            split_roots.append(data_subdir)
+
         for split in splits:
-            split_path = self.root_path / split
-            if not split_path.exists():
+            split_path = None
+            for root in split_roots:
+                candidate = root / split
+                if candidate.exists():
+                    split_path = candidate
+                    break
+
+            if split_path is None:
                 continue
 
             # 遍历split下的所有子目录

@@ -18,15 +18,15 @@ from pathlib import Path
 DATASET_PATHS = {
     # Dataset 1: IQ-OTHNCCD Lung Cancer Dataset
     # 结构: root/Augmented IQ-OTHNCCD lung cancer dataset/{Normal cases,Malignant cases,Benign cases}/
-    "dataset1": "/Users/zen/Desktop/project/Clarify AI/datasets/IQ-OTHNCCD/Augmented IQ-OTHNCCD lung cancer dataset",
+    "dataset1": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/IQ-OTHNCCD",
 
     # Dataset 2: Lung and Colon Cancer Histopathological Images
     # 结构: root/lung_colon_image_set/lung_image_sets/{lung_n,lung_aca,lung_scc}/
-    "dataset2": "/Users/zen/Desktop/project/Clarify AI/datasets/LungColon/lung_colon_image_set/lung_image_sets",
+    "dataset2": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/LungColon",
 
     # Dataset 3: Lung Cancer 4 Types Image Dataset
     # 结构: root/Data/{train,valid,test}/{class_subdir}/  (class_subdir含肿瘤位置信息)
-    "dataset3": "/Users/zen/Desktop/project/Clarify AI/datasets/Lung4Types/Data",
+    "dataset3": "/Users/zen/Desktop/project/ClarifyLung-AI-Experiment/datasets/Lung4Types",
 }
 
 # =============================================================================
