@@ -144,10 +144,9 @@ def _compute_auc_scores(
     # OvR: macro average
     auc_roc_ovr = np.mean(auc_roc_ovr_list)
 
-    # OvO: pairwise (for 3 classes, 3 pairs)
-    # (0,1), (0,2), (1,2)
-    pairs = [(0, 1), (0, 2), (1, 2)]
-    for c1, c2 in pairs:
+    # OvO: 所有类别两两组合，自动适配任意类别数
+    from itertools import combinations
+    for c1, c2 in combinations(range(num_classes), 2):
         # Get samples belonging to either class
         mask = (targets == c1) | (targets == c2)
         if mask.sum() < 2:

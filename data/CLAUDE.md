@@ -2,11 +2,18 @@
 > L2 | 父级: ../CLAUDE.md
 
 成员清单
-dataset.py        : 数据集定义，XRayDataset类继承torch.utils.data.Dataset，支持train/val/test划分
-augmentation.py   : 数据增强策略，基础增强(旋转/翻转/裁剪) + 高级增强(CutMix/MixUp/弹性变形)
-loader.py         : 数据加载器工厂，支持balance sampling和multi-worker
+custom_dataset.py : 三数据集统一加载器 (核心)
+                  - CustomLungDataset: 自动探测Kaggle嵌套结构
+                  - merge_datasets: 合并三数据集
+                  - split_dataset: train/val/test划分
+                  - LabelSchema: 统一标签映射 (normal=0, benign=1, malignant=2)
+augmentation.py   : 数据增强策略
+                  - 基础增强: 旋转/翻转/裁剪/颜色抖动
+                  - 高级增强: CutMix/MixUp/RandomErasing
+                  - get_train_augmentation / get_val_augmentation
+dataset.py        : 基础数据集类 (已被custom_dataset替代)
 visualization.py  : 数据可视化工具，类别分布图、样本网格展示
 
-法则: 输入输出明确 · 支持配置驱动 · 可复现随机种子
+法则: 输入输出明确 · 支持配置驱动 · 可复现随机种子 · 路径自适应探测
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

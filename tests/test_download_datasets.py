@@ -117,19 +117,10 @@ class TestKaggleCredentials:
         """验证能检测到缺失的kaggle.json凭证"""
         from scripts.download_datasets import check_kaggle_credentials
 
-        # 模拟不存在的凭证文件
-        with patch.dict(os.environ, {}, clear=True):
-            with patch('pathlib.Path.exists', return_value=False):
-                # 重新导入以使用mock
-                import importlib
-                import scripts.download_datasets as dd
-                importlib.reload(dd)
-
-                result = dd.check_kaggle_credentials()
-                # 如果kaggle.json不存在，应返回False
-                kaggle_json = Path.home() / '.kaggle' / 'kaggle.json'
-                if not kaggle_json.exists():
-                    assert result is False, "凭证不存在时应返回False"
+        # 模拟不存在的凭证文件，仅mock kaggle.json路径的exists
+        with patch('scripts.download_datasets.Path.exists', return_value=False):
+            result = check_kaggle_credentials()
+            assert result is False, "凭证不存在时应返回False"
 
 
 # =============================================================================
@@ -451,7 +442,7 @@ class TestDownloadSkipLogic:
         """验证已存在目录时跳过下载"""
         from scripts.download_datasets import download_dataset
 
-        with patch('scripts.download_datasets.kagglehub.dataset_download') as mock_download:
+        with patch('kagglehub.dataset_download') as mock_download:
             with tempfile.TemporaryDirectory() as tmpdir:
                 target = Path(tmpdir)
                 # 创建一些文件使目录非空
@@ -467,7 +458,7 @@ class TestDownloadSkipLogic:
         """验证force=True时覆盖已存在目录"""
         from scripts.download_datasets import download_dataset
 
-        with patch('scripts.download_datasets.kagglehub.dataset_download') as mock_download:
+        with patch('kagglehub.dataset_download') as mock_download:
             with tempfile.TemporaryDirectory() as tmpdir:
                 fake_download = Path(tmpdir) / 'fake_download'
                 fake_download.mkdir()

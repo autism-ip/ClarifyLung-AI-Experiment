@@ -133,9 +133,11 @@ def get_optimizer(
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if 'cnn' in name.lower() or 'feature_extractor' in name.lower():
+        # 按模块前缀精确分组，避免子串误匹配
+        top_module = name.split('.')[0].lower()
+        if top_module == 'backbone':
             cnn_params.append(param)
-        elif 'transformer' in name.lower() or 'attention' in name.lower():
+        elif top_module in ('transformer_encoder', 'image_patch_extractor'):
             transformer_params.append(param)
         else:
             other_params.append(param)
@@ -294,7 +296,7 @@ class Trainer:
         )
 
         # 设置混合精度训练
-        self.scaler = torch.amp.GradScaler('cuda') if self.config.use_amp else None
+        self.scaler = torch.amp.GradScaler(self.device.type) if self.config.use_amp else None
 
     def train_epoch(self) -> Tuple[float, float]:
         """
@@ -315,7 +317,7 @@ class Trainer:
 
             # 混合精度训练
             if self.config.use_amp and self.scaler is not None:
-                with torch.amp.autocast('cuda'):
+                with torch.amp.autocast(self.device.type):
                     outputs = self.model(images)
                     loss = self.criterion(outputs, targets)
 
@@ -349,7 +351,7 @@ class Trainer:
         return avg_loss, avg_acc
 
     @torch.no_grad()
-    def validate(self, loader: DataLoader) -> Tuple[float, float]:
+    def validate(self, loader: DataLoader) -> Tuple[float, float, List, List]:
         """
         验证/测试
 
@@ -372,7 +374,7 @@ class Trainer:
 
             # 混合精度推理
             if self.config.use_amp and self.scaler is not None:
-                with torch.amp.autocast('cuda'):
+                with torch.amp.autocast(self.device.type):
                     outputs = self.model(images)
                     loss = self.criterion(outputs, targets)
             else:

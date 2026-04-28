@@ -78,9 +78,6 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Optional
 
-import kagglehub
-
-
 # =============================================================================
 # 数据集配置
 # =============================================================================
@@ -182,6 +179,7 @@ def download_dataset(slug: str, target: Path, force: bool = False) -> bool:
     print(f"[TARGET] 目标路径: {target}")
 
     try:
+        import kagglehub
         # 使用 kagglehub 下载
         downloaded_path = kagglehub.dataset_download(slug)
 

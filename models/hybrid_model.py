@@ -46,7 +46,7 @@ class HybridModel(nn.Module):
         if feature_layers is None:
             feature_layers = ['layer3', 'layer4']
         if backbone_model is None:
-            backbone_model = models.resnet50(pretrained=True)
+            backbone_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
 
         self.backbone = backbone_model
         self.mutil_scale_extractor = MutilScaleFeatureExtractor(

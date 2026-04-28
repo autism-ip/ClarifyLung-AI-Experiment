@@ -7,11 +7,12 @@
 """
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, List, Dict, Tuple
 from PIL import Image
 import torch
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset, ConcatDataset, random_split
 
 
 # =============================================================================
@@ -40,15 +41,43 @@ DATASET3_MAPPING = {
     'squamous.cell.carcinoma': 'benign'
 }
 
-# 统一标签到整数编码
-LABEL_TO_INDEX = {
-    'normal': 0,
-    'benign': 1,
-    'malignant': 2
-}
 
-# 反向映射（用于显示）
-INDEX_TO_LABEL = {v: k for k, v in LABEL_TO_INDEX.items()}
+# =============================================================================
+# 统一标签模式封装
+# =============================================================================
+
+@dataclass(frozen=True)
+class LabelSchema:
+    """三数据集统一标签模式：原始标签 -> 统一标签 -> 整数编码"""
+    raw_to_unified: Dict[str, str]
+    unified_to_index: Dict[str, int]
+
+    @property
+    def index_to_unified(self) -> Dict[int, str]:
+        return {v: k for k, v in self.unified_to_index.items()}
+
+    def encode(self, raw_label: str) -> int:
+        return self.unified_to_index[self.raw_to_unified[raw_label]]
+
+
+# 统一标签体系（所有数据集共享）
+_UNIFIED_TO_INDEX = {'normal': 0, 'benign': 1, 'malignant': 2}
+
+SCHEMA_DATASET1 = LabelSchema(DATASET1_MAPPING, _UNIFIED_TO_INDEX)
+SCHEMA_DATASET2 = LabelSchema(DATASET2_MAPPING, _UNIFIED_TO_INDEX)
+SCHEMA_DATASET3 = LabelSchema(DATASET3_MAPPING, _UNIFIED_TO_INDEX)
+
+# 向后兼容别名
+LABEL_TO_INDEX = SCHEMA_DATASET1.unified_to_index
+INDEX_TO_LABEL = SCHEMA_DATASET1.index_to_unified
+
+# 支持的图像文件扩展名
+_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+
+
+def _is_image_file(path: Path) -> bool:
+    """判断路径是否为支持的图像文件"""
+    return path.suffix.lower() in _IMAGE_EXTENSIONS
 
 
 # =============================================================================
@@ -145,7 +174,7 @@ class CustomLungDataset(Dataset):
 
             # 遍历目录中的图像文件
             for image_name in sorted(class_path.iterdir()):
-                if image_name.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']:
+                if _is_image_file(image_name):
                     self.images_path.append(str(image_name))
                     self.labels.append(label_idx)
 
@@ -178,7 +207,7 @@ class CustomLungDataset(Dataset):
             label_idx = LABEL_TO_INDEX[unified_label]
 
             for image_name in sorted(class_path.iterdir()):
-                if image_name.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']:
+                if _is_image_file(image_name):
                     self.images_path.append(str(image_name))
                     self.labels.append(label_idx)
 
@@ -341,10 +370,10 @@ def split_dataset(
     val_size = int(val_ratio * total_size)
     test_size = total_size - train_size - val_size
 
-    # 设置随机种子保证可复现
-    torch.manual_seed(seed)
+    # 使用独立 Generator 保证可复现，不污染全局随机状态
+    generator = torch.Generator().manual_seed(seed)
     train_dataset, val_dataset, test_dataset = random_split(
-        dataset, [train_size, val_size, test_size]
+        dataset, [train_size, val_size, test_size], generator=generator
     )
 
     return train_dataset, val_dataset, test_dataset

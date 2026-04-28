@@ -32,7 +32,7 @@ Python + PyTorch + torchvision + timm + albumentations
 │       - 混合精度训练 (AMP)
 │       - 早停机制
 │       - 检查点保存/恢复
-├── experiments/       # 实验模块 (93 tests, 100% pass)
+├── experiments/       # 实验模块 (144 tests, 100% pass)
 │   ├── __init__.py
 │   ├── metrics.py           # EvaluationMetrics, compute_metrics
 │   ├── complexity.py        # ModelComplexityAnalyzer
@@ -49,17 +49,33 @@ Python + PyTorch + torchvision + timm + albumentations
 │       ├── gradcam.py       # GradCAMVisualizer
 │       └── attention_maps.py # AttentionVisualizer
 ├── tests/             # 单元测试模块
-│   ├── test_dataset_loading.py
-│   └── test_model_forward.py
+│   ├── test_dataset_loading.py  # 数据集加载测试
+│   ├── test_download_datasets.py # Kaggle下载脚本测试
+│   └── test_model_forward.py    # 模型前向/训练测试
+├── scripts/           # 实验执行脚本
+│   ├── download_datasets.py       # Kaggle数据集下载器
+│   ├── benchmark_experiment.py    # 基准模型对比实验CLI
+│   ├── ablation_experiment.py     # 消融实验CLI
+│   ├── cross_validation_experiment.py # 交叉验证实验CLI
+│   ├── submit_benchmark.sh        # SLURM: 基准实验提交
+│   ├── submit_ablation.sh         # SLURM: 消融实验提交
+│   └── submit_crossval.sh         # SLURM: 交叉验证提交
 ├── configs/           # 配置文件模块
-├── outputs/           # 输出结果模块
+│   ├── __init__.py
+│   └── dataset_config.py    # 数据集路径配置 (环境变量驱动)
+├── outputs/           # 输出结果模块 (运行时生成)
 │   ├── checkpoints/     # 模型检查点
 │   ├── logs/           # 训练日志
-│   └── figures/        # 可视化图表
+│   ├── figures/        # 可视化图表
+│   └── slurm/          # SLURM作业日志
 ├── docs/              # 文档资料模块
-├── CLAUDE.md          # 项目宪法
+├── model.py           # 兼容入口，从 models 包 re-export
+├── baseline_experiment.py   # 小规模快速验证脚本
+├── validate_pipeline.py     # 3步流水线烟雾测试
 ├── requirements.txt   # Python依赖
-└── model.py           # 兼容入口，从 models 包 re-export
+├── DEPLOY.md          # 远程服务器部署指南
+├── README.md          # 项目说明文档
+└── CLAUDE.md          # 项目宪法 (本文件)
 ```
 
 ## 数据集说明
@@ -151,6 +167,28 @@ trainer = Trainer(model, config, train_loader=train_loader, val_loader=val_loade
 metrics = trainer.fit()
 ```
 
+### CLI 实验入口
+
+```bash
+# 基准模型对比
+python scripts/benchmark_experiment.py --epochs 50 --batch-size 32
+
+# 消融实验
+python scripts/ablation_experiment.py --epochs 30 --batch-size 32
+
+# 交叉验证
+python scripts/cross_validation_experiment.py --folds 5 --epochs 30
+```
+
+### SLURM 远程提交
+
+```bash
+# 修改 scripts/submit_*.sh 中的环境配置后提交
+sbatch scripts/submit_benchmark.sh    # 24h
+sbatch scripts/submit_ablation.sh     # 48h
+sbatch scripts/submit_crossval.sh     # 72h
+```
+
 ### 模型评估
 
 ```python
@@ -192,7 +230,7 @@ test_results = trainer.evaluate(test_loader)
 - [x] 模型架构模块 (`model.py`, `models/`)
 - [x] 训练流程模块 (`training/trainer.py`)
 - [x] 单元测试模块 (`tests/`)
-- [x] 实验模块 (`experiments/`) - 93 tests, 100% pass
+- [x] 实验模块 (`experiments/`) - 144 tests, 100% pass (Windows环境2个temp权限error无关代码)
   - [x] 基准模型对比 (`benchmark/`)
   - [x] 消融实验框架 (`ablation/`)
   - [x] 交叉验证 (`cross_validation/`)
@@ -201,7 +239,7 @@ test_results = trainer.evaluate(test_loader)
 
 ### 待实现模块 📋
 - [ ] 数据探索与预处理实验 (`data/visualization.py` 扩展)
-- [ ] 远程服务器训练脚本
+- [ ] 端到端训练脚本 (`scripts/train.py`)
 
 ## 实验方案
 
@@ -274,11 +312,24 @@ from model import HybridModel
 | 文件 | 用途 |
 |-----|------|
 | `model.py` | 主模型定义 (CNN-Transformer Hybrid) |
-| `data/custom_dataset.py` | 三数据集统一加载器 |
+| `data/custom_dataset.py` | 三数据集统一加载器 (核心) |
 | `data/augmentation.py` | 数据增强管道 |
-| `training/trainer.py` | 完整训练流程 |
+| `training/trainer.py` | 完整训练流程 (差分LR/AMP/早停) |
+| `experiments/metrics.py` | 评估指标计算 |
+| `experiments/benchmark/models.py` | 基准模型工厂 |
+| `experiments/ablation/configs.py` | 消融配置定义 |
+| `experiments/cross_validation/validator.py` | K折交叉验证 |
+| `scripts/benchmark_experiment.py` | 基准对比实验CLI |
+| `scripts/ablation_experiment.py` | 消融实验CLI |
+| `scripts/cross_validation_experiment.py` | 交叉验证CLI |
+| `scripts/submit_benchmark.sh` | SLURM: 基准实验提交 |
+| `scripts/submit_ablation.sh` | SLURM: 消融实验提交 |
+| `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |
+| `configs/dataset_config.py` | 数据集路径配置 (环境变量驱动) |
 | `tests/` | 单元测试套件 |
 | `requirements.txt` | Python依赖列表 |
+| `DEPLOY.md` | 远程服务器部署指南 |
+| `README.md` | 项目说明与复刻指南 |
 
 ## 引用
 

@@ -26,5 +26,8 @@ outputs/slurm/
 .DS_Store
 Thumbs.db
 
+# Datasets (downloaded data, not code)
+datasets/
+
 # Local config
 .claude/settings.local.json
