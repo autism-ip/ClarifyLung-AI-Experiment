@@ -6,6 +6,7 @@ custom_dataset.py : 三数据集统一加载器 (核心)
                   - CustomLungDataset: 自动探测Kaggle嵌套结构
                   - merge_datasets: 合并三数据集
                   - split_dataset: train/val/test划分
+                  - create_weighted_sampler: 类别不平衡时的 WeightedRandomSampler
                   - LabelSchema: 统一标签映射 (normal=0, benign=1, malignant=2)
 augmentation.py   : 数据增强策略
                   - 基础增强: 旋转/翻转/裁剪/颜色抖动

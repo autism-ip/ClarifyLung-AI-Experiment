@@ -379,6 +379,47 @@ def split_dataset(
     return train_dataset, val_dataset, test_dataset
 
 
+def create_weighted_sampler(dataset):
+    """
+    为类别不平衡数据集创建 WeightedRandomSampler
+
+    根据每个样本的类别频率计算权重：
+    weight = total_samples / (num_classes * class_count)
+
+    Args:
+        dataset: torch Dataset 或 Subset
+
+    Returns:
+        WeightedRandomSampler: 可用于 DataLoader 的 sampler
+    """
+    from collections import Counter
+    from torch.utils.data import WeightedRandomSampler
+
+    # 提取所有标签
+    if hasattr(dataset, 'labels'):
+        labels = dataset.labels
+    elif hasattr(dataset, 'dataset') and hasattr(dataset.dataset, 'labels'):
+        # Subset 情况
+        labels = [dataset.dataset.labels[i] for i in dataset.indices]
+    else:
+        labels = [dataset[i][1] for i in range(len(dataset))]
+
+    class_counts = Counter(labels)
+    num_classes = len(class_counts)
+    total = len(labels)
+
+    # 权重 = 逆频率
+    class_weights = {cls: total / (num_classes * count) for cls, count in class_counts.items()}
+    sample_weights = [class_weights[label] for label in labels]
+
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=total,
+        replacement=True
+    )
+    return sampler
+
+
 # =============================================================================
 # 测试代码
 # =============================================================================

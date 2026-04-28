@@ -23,28 +23,29 @@ print("\n[STEP 1] Verifying Data Loading")
 print("-" * 70)
 
 from data.custom_dataset import CustomLungDataset, merge_datasets
+from configs import DATASET_PATHS
+from torchvision import transforms
 
-# Correct dataset paths based on actual directory structure
-DATASET_PATHS = {
-    "dataset1": "/Users/zen/Desktop/project/Clarify AI/datasets/IQ-OTHNCCD/Augmented IQ-OTHNCCD lung cancer dataset",
-    "dataset2": "/Users/zen/Desktop/project/Clarify AI/datasets/LungColon/lung_colon_image_set",
-    "dataset3": "/Users/zen/Desktop/project/Clarify AI/datasets/Lung4Types/Data",
-}
+# Basic transform to convert PIL Image to Tensor
+_to_tensor = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
 
 try:
     # Load datasets
     print("Loading Dataset 1 (IQ-OTHNCCD)...")
-    ds1 = CustomLungDataset(DATASET_PATHS['dataset1'], 'dataset1')
+    ds1 = CustomLungDataset(DATASET_PATHS['dataset1'], 'dataset1', transform=_to_tensor)
     print(f"  OK: {len(ds1)} samples")
     print(f"  Distribution: {ds1.get_class_distribution()}")
 
     print("\nLoading Dataset 2 (LungColon)...")
-    ds2 = CustomLungDataset(DATASET_PATHS['dataset2'], 'dataset2')
+    ds2 = CustomLungDataset(DATASET_PATHS['dataset2'], 'dataset2', transform=_to_tensor)
     print(f"  OK: {len(ds2)} samples")
     print(f"  Distribution: {ds2.get_class_distribution()}")
 
     print("\nLoading Dataset 3 (Lung4Types)...")
-    ds3 = CustomLungDataset(DATASET_PATHS['dataset3'], 'dataset3')
+    ds3 = CustomLungDataset(DATASET_PATHS['dataset3'], 'dataset3', transform=_to_tensor)
     print(f"  OK: {len(ds3)} samples")
     print(f"  Distribution: {ds3.get_class_distribution()}")
 
@@ -115,7 +116,7 @@ try:
     config = TrainingConfig(
         num_epochs=2,
         batch_size=8,
-        use_amp=False,  # Disable AMP to avoid GPU-specific issues
+        use_amp=torch.cuda.is_available(),  # Enable AMP when GPU available
         output_dir=str(PROJECT_ROOT / 'outputs' / 'test_validation'),
         learning_rate=1e-4,
         transformer_lr=5e-4,
@@ -168,8 +169,3 @@ ALL CHECKS PASSED - Pipeline is ready for full experiments!
     len(ds3), ds3.get_class_distribution(),
     train_loss, train_acc
 ))
-
-print("\nNOTE: Dataset paths in configs/dataset_config.py need to be corrected:")
-print(f"  dataset1: '{DATASET_PATHS['dataset1']}'")
-print(f"  dataset2: '{DATASET_PATHS['dataset2']}'")
-print(f"  dataset3: '{DATASET_PATHS['dataset3']}'")
