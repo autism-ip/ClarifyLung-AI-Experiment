@@ -6,5 +6,6 @@
 """
 
 from .hybrid_model import HybridModel, CLASS_NAMES
+from .configurable_hybrid import ConfigurableHybrid
 
-__all__ = ['HybridModel', 'CLASS_NAMES']
+__all__ = ['HybridModel', 'ConfigurableHybrid', 'CLASS_NAMES']

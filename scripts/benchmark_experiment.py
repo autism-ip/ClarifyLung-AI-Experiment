@@ -33,10 +33,12 @@ from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
 from training.trainer import TrainingConfig, Trainer
-from experiments.benchmark import create_resnet50, create_vit, create_hybrid_basic, create_hybrid_advanced
+from models import HybridModel
+from experiments.benchmark import create_resnet50, create_vit, create_hybrid_basic
 from experiments.benchmark import BenchmarkResult, generate_comparison_table, save_results
 from experiments.visualization import plot_model_comparison, plot_training_curves, plot_confusion_matrix
 from experiments.metrics import compute_metrics
+from scripts.utils import set_seed, get_device
 
 
 # =============================================================================
@@ -78,39 +80,20 @@ class BenchmarkExperimentConfig:
 
 
 # =============================================================================
-# 工具函数
+# 模型工厂
 # =============================================================================
-
-def set_seed(seed: int):
-    """设置随机种子"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-
-def get_device():
-    """获取计算设备"""
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-        print(f"[INFO] Using GPU: {torch.cuda.get_device_name(0)}")
-    else:
-        device = torch.device('cpu')
-        print(f"[INFO] Using CPU")
-    return device
-
 
 def create_model(model_name: str, num_classes: int, pretrained: bool = True):
     """创建基准模型"""
     if model_name == 'resnet50':
-        # create_resnet50 always uses pretrained=True
         return create_resnet50(num_classes=num_classes)
     elif model_name == 'vit':
-        # create_vit always uses pretrained=True
         return create_vit(num_classes=num_classes)
     elif model_name == 'hybrid_basic':
         return create_hybrid_basic(num_classes=num_classes)
     elif model_name == 'hybrid_advanced':
-        return create_hybrid_advanced(num_classes=num_classes)
+        # 使用 models/HybridModel 作为完整混合架构
+        return HybridModel(num_classes=num_classes)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 

@@ -25,6 +25,10 @@ class GatingMechanism(nn.Module):
 
         self.gate_type = gate_type
 
+        # gate_type=None 时跳过门控，不创建任何层
+        if gate_type is None:
+            return
+
         # channel maps for common ResNets
         if backbone == 'resnet18':
             layer_channels = {'layer1': 64, 'layer2': 128, 'layer3': 256, 'layer4': 512}
@@ -50,6 +54,9 @@ class GatingMechanism(nn.Module):
 
     def forward(self, x):
         # x: [B, C, H, W]
+        if self.gate_type is None:
+            return x
+
         s = torch.mean(x, dim=[2, 3])  # [B, C]
 
         if self.gate_type == 'sigmoid':

@@ -34,9 +34,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
+from models import ConfigurableHybrid
 from experiments.ablation import AblationStudy, ABLATION_CONFIGS, AblationConfig
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_model_comparison
+from scripts.utils import set_seed, get_device
 
 
 # =============================================================================
@@ -74,176 +76,6 @@ class AblationExperimentConfig:
     # 输出配置
     output_dir: str = "outputs/ablation"
     save_checkpoints: bool = True
-
-
-# =============================================================================
-# 工具函数
-# =============================================================================
-
-def set_seed(seed: int):
-    """设置随机种子"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-
-def get_device():
-    """获取计算设备"""
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-        print(f"[INFO] Using GPU: {torch.cuda.get_device_name(0)}")
-    else:
-        device = torch.device('cpu')
-        print(f"[INFO] Using CPU")
-    return device
-
-
-# =============================================================================
-# 简化的HybridModel用于消融实验
-# =============================================================================
-
-class AblationHybridModel(nn.Module):
-    """
-    支持消融配置的简化HybridModel
-
-    Args:
-        multi_scale: 是否使用多尺度特征 (layer3+layer4)
-        gate: 门控类型 ('se', 'sigmoid', None)
-        transformer: 是否使用Transformer
-        cross_attention: 是否使用交叉注意力
-        num_classes: 分类数
-    """
-
-    def __init__(
-        self,
-        multi_scale: bool = True,
-        gate: str = 'se',
-        transformer: bool = True,
-        cross_attention: bool = True,
-        num_classes: int = 3,
-        model_dim: int = 512,
-        nhead: int = 8,
-        num_layers: int = 6,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        self.multi_scale = multi_scale
-        self.gate_type = gate
-        self.use_transformer = transformer
-        self.use_cross_attention = cross_attention
-
-        # CNN特征提取器 (ResNet50)
-        from torchvision.models import resnet50, ResNet50_Weights
-        cnn = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-
-        # 特征层配置
-        if multi_scale:
-            self.feature_layers = ['layer3', 'layer4']
-            feature_dim = 1024 + 2048  # layer3 + layer4
-        else:
-            self.feature_layers = ['layer4']
-            feature_dim = 2048
-
-        # 移除原始分类头
-        self.cnn_features = nn.Sequential()
-        for name, child in cnn.named_children():
-            if name in ['conv1', 'bn1', 'relu', 'maxpool']:
-                self.cnn_features.add_module(name, child)
-            elif name in ['layer1', 'layer2', 'layer3', 'layer4']:
-                self.cnn_features.add_module(name, child)
-
-        # 特征融合
-        if multi_scale:
-            self.fusion = nn.Sequential(
-                nn.AdaptiveAvgPool2d((7, 7)),
-                nn.Flatten()
-            )
-            self.fc_input_dim = feature_dim * 49
-        else:
-            self.fc_input_dim = 2048 * 7 * 7
-
-        # 门控机制
-        if gate == 'se':
-            self.gate = nn.Sequential(
-                nn.Linear(self.fc_input_dim, self.fc_input_dim // 16),
-                nn.ReLU(inplace=True),
-                nn.Linear(self.fc_input_dim // 16, self.fc_input_dim),
-                nn.Sigmoid()
-            )
-        elif gate == 'sigmoid':
-            self.gate = nn.Sigmoid()
-        else:
-            self.gate = None
-
-        # Transformer
-        if transformer:
-            self.transformer = nn.TransformerEncoder(
-                nn.TransformerEncoderLayer(
-                    d_model=model_dim,
-                    nhead=nhead,
-                    dim_feedforward=model_dim * 4,
-                    dropout=dropout,
-                    batch_first=True
-                ),
-                num_layers=num_layers
-            )
-            self.transformer_proj = nn.Linear(self.fc_input_dim, model_dim)
-        else:
-            self.transformer = None
-
-        # 交叉注意力
-        if cross_attention and transformer:
-            self.cross_attention = nn.MultiheadAttention(
-                embed_dim=model_dim,
-                num_heads=nhead,
-                dropout=dropout,
-                batch_first=True
-            )
-        else:
-            self.cross_attention = None
-
-        # 分类头
-        final_dim = model_dim if transformer else self.fc_input_dim
-        self.classifier = nn.Sequential(
-            nn.Linear(final_dim, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(256, num_classes)
-        )
-
-    def forward(self, x):
-        # CNN特征提取
-        feat = self.cnn_features(x)
-
-        # 多尺度融合
-        if self.multi_scale:
-            # layer3 和 layer4 的特征需要分别池化后拼接
-            # 简化：直接使用layer4的特征
-            pass
-
-        # 全局池化
-        feat = nn.functional.adaptive_avg_pool2d(feat, (7, 7))
-        feat = feat.view(feat.size(0), -1)
-
-        # 门控
-        if self.gate is not None:
-            if self.gate_type == 'se':
-                gate_weights = self.gate(feat)
-                feat = feat * gate_weights
-            else:
-                feat = feat * self.gate(feat)
-
-        # Transformer
-        if self.transformer is not None:
-            feat_3d = feat.view(feat.size(0), 7, -1)  # [B, 7, 768]
-            feat_3d = self.transformer_proj(feat_3d)
-            feat_3d = self.transformer(feat_3d)
-            feat = feat_3d.mean(dim=1)  # 全局平均
-
-        # 分类
-        out = self.classifier(feat)
-        return out
 
 
 # =============================================================================
@@ -443,8 +275,8 @@ def run_ablation_experiment(config: AblationExperimentConfig):
 
         start_time = time.time()
 
-        # 创建模型
-        model = AblationHybridModel(
+        # 创建模型 (使用 ConfigurableHybrid，基于真实 HybridModel 组件)
+        model = ConfigurableHybrid(
             multi_scale=cfg.multi_scale,
             gate=cfg.gate,
             transformer=cfg.transformer,

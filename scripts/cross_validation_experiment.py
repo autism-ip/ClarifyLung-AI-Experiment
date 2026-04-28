@@ -29,9 +29,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
+from models import HybridModel
 from experiments.cross_validation import KFoldCrossValidator, compare_fold_results
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_training_curves
+from scripts.utils import set_seed, get_device
 
 
 # =============================================================================
@@ -67,85 +69,6 @@ class CrossValidationConfig:
     # 输出配置
     output_dir: str = "outputs/cross_validation"
     save_checkpoints: bool = True
-
-
-# =============================================================================
-# 工具函数
-# =============================================================================
-
-def set_seed(seed: int):
-    """设置随机种子"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-
-def get_device():
-    """获取计算设备"""
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-        print(f"[INFO] Using GPU: {torch.cuda.get_device_name(0)}")
-    else:
-        device = torch.device('cpu')
-        print(f"[INFO] Using CPU")
-    return device
-
-
-# =============================================================================
-# 简化的HybridModel用于交叉验证
-# =============================================================================
-
-class SimpleHybridModel(nn.Module):
-    """简化的HybridModel用于交叉验证"""
-
-    def __init__(
-        self,
-        num_classes: int = 3,
-        model_dim: int = 512,
-        nhead: int = 8,
-        num_layers: int = 6,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        # CNN特征提取器
-        from torchvision.models import resnet50, ResNet50_Weights
-        cnn = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-
-        self.cnn_features = nn.Sequential(
-            cnn.conv1, cnn.bn1, cnn.relu, cnn.maxpool,
-            cnn.layer1, cnn.layer2, cnn.layer3, cnn.layer4
-        )
-
-        # Transformer
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(
-                d_model=2048,
-                nhead=nhead,
-                dim_feedforward=model_dim * 4,
-                dropout=dropout,
-                batch_first=True
-            ),
-            num_layers=num_layers
-        )
-
-        self.proj = nn.Linear(2048, model_dim)
-
-        # 分类头
-        self.classifier = nn.Sequential(
-            nn.Linear(model_dim, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(256, num_classes)
-        )
-
-    def forward(self, x):
-        feat = self.cnn_features(x)  # [B, 2048, 7, 7]
-        feat = feat.flatten(2).permute(0, 2, 1)  # [B, 49, 2048]
-        feat = self.proj(feat)
-        feat = self.transformer(feat)
-        feat = feat.mean(dim=1)
-        return self.classifier(feat)
 
 
 # =============================================================================
@@ -351,8 +274,8 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
             shuffle=False, num_workers=config.num_workers, pin_memory=True
         )
 
-        # 创建模型
-        model = SimpleHybridModel(
+        # 创建模型 (使用统一 HybridModel)
+        model = HybridModel(
             num_classes=config.num_classes,
             model_dim=512,
             nhead=8,
@@ -484,7 +407,7 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
         f.write(f"# 交叉验证实验报告\n\n")
         f.write(f"**实验时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         f.write(f"**K折数**: {config.n_folds}\n\n")
-        f.write(f"**模型**: SimpleHybridModel\n\n")
+        f.write(f"**模型**: HybridModel (CNN-Transformer)\n\n")
         f.write(f"## 各折结果\n\n")
         f.write(f"| Fold | Val Accuracy | Val F1 | Val AUC | Training Time (s) |\n")
         f.write(f"|------|---------------|--------|---------|-------------------|\n")

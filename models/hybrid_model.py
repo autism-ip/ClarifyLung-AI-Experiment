@@ -40,13 +40,18 @@ class HybridModel(nn.Module):
         num_layers=6,
         dropout=0.1,
         num_classes=3,
-        backbone_name='resnet50'
+        backbone_name='resnet50',
+        use_transformer=True,
+        use_cross_attention=True
     ):
         super().__init__()
         if feature_layers is None:
             feature_layers = ['layer3', 'layer4']
         if backbone_model is None:
             backbone_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+
+        self.use_transformer = use_transformer
+        self.use_cross_attention = use_cross_attention
 
         self.backbone = backbone_model
         self.mutil_scale_extractor = MutilScaleFeatureExtractor(
@@ -65,30 +70,33 @@ class HybridModel(nn.Module):
         )
 
         # Transformer patch stream
-        self.image_patch_extractor = ImagePatchExtractor(
-            patch_size=16,
-            model_dim=model_dim,
-            image_size=224
-        )
-        self.transformer_encoder = TransformerEncoder(
-            model_dim=model_dim,
-            dropout=dropout,
-            nhead=nhead,
-            num_layers=num_layers
-        )
+        if use_transformer:
+            self.image_patch_extractor = ImagePatchExtractor(
+                patch_size=16,
+                model_dim=model_dim,
+                image_size=224
+            )
+            self.transformer_encoder = TransformerEncoder(
+                model_dim=model_dim,
+                dropout=dropout,
+                nhead=nhead,
+                num_layers=num_layers
+            )
 
         self.cnn_to_seq = nn.Linear(self.fused_channels, model_dim)
 
-        self.cross_attention = CrossAttention(
-            num_layers=2,
-            nhead=nhead,
-            model_dim=model_dim,
-            dropout=dropout,
-            cnn_in_channels=self.fused_channels
-        )
+        if use_cross_attention:
+            self.cross_attention = CrossAttention(
+                num_layers=2,
+                nhead=nhead,
+                model_dim=model_dim,
+                dropout=dropout,
+                cnn_in_channels=self.fused_channels
+            )
 
+        classifier_input = 2 * model_dim if (use_transformer or use_cross_attention) else model_dim
         self.classifier = ClassificationHead(
-            input_dim=2 * model_dim,
+            input_dim=classifier_input,
             num_classes=num_classes,
             dropout=dropout
         )
@@ -106,9 +114,21 @@ class HybridModel(nn.Module):
         scnn_seq = scnn.view(B, C, Hf * Wf).permute(0, 2, 1)  # [B, T_cnn, C]
         scnn_seq_proj = self.cnn_to_seq(scnn_seq)             # [B, T_cnn, model_dim]
 
+        # 纯CNN路径：无Transformer也无交叉注意力
+        if not self.use_transformer and not self.use_cross_attention:
+            pooled_cnn = scnn_seq_proj.mean(dim=1)  # [B, model_dim]
+            return self.classifier(pooled_cnn)
+
         # Transformer path
         stf = self.image_patch_extractor(x)   # [B, T_patch, model_dim]
         stf = self.transformer_encoder(stf)   # [B, T_patch, model_dim]
+
+        # 无交叉注意力：独立池化后拼接
+        if not self.use_cross_attention:
+            pooled_cnn = scnn_seq_proj.mean(dim=1)  # [B, model_dim]
+            pooled_tf = stf.mean(dim=1)             # [B, model_dim]
+            fused = torch.cat([pooled_cnn, pooled_tf], dim=1)  # [B, 2*model_dim]
+            return self.classifier(fused)
 
         # Cross attention: treat queries as sequences
         attncnn, _ = self.cross_attention(scnn_seq_proj, stf, stf)

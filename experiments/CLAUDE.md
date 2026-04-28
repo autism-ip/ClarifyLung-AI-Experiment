@@ -7,7 +7,8 @@ metrics.py                  : 评估指标计算 (EvaluationMetrics, compute_met
                             - 混淆矩阵
 complexity.py               : 模型复杂度分析 (ModelComplexityAnalyzer)
                             - 参数量统计, FLOPs计算
-benchmark/models.py         : 基准模型工厂 (create_resnet50, create_vit, create_hybrid_*)
+benchmark/models.py         : 基准模型工厂 (create_resnet50, create_vit, create_hybrid_basic)
+                            - create_hybrid_advanced 已统一指向 models.HybridModel
 benchmark/benchmarker.py    : 基准测试执行器 (ModelBenchmark, BenchmarkResult)
                             - 多模型对比, 结果保存, 表格生成
 ablation/configs.py         : 消融配置定义 (AblationConfig, ABLATION_CONFIGS)

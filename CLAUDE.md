@@ -18,7 +18,8 @@ Python + PyTorch + torchvision + timm + albumentations
 │   └── visualization.py     # 数据可视化
 ├── models/            # 模型架构模块
 │   ├── __init__.py
-│   ├── hybrid_model.py      # CNN-Transformer混合模型
+│   ├── hybrid_model.py      # CNN-Transformer混合模型 (支持消融开关)
+│   ├── configurable_hybrid.py # 消融实验适配器
 │   └── components/          # 模型组件
 │       ├── feature_extractor.py
 │       ├── gating.py
@@ -57,6 +58,7 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── benchmark_experiment.py    # 基准模型对比实验CLI
 │   ├── ablation_experiment.py     # 消融实验CLI
 │   ├── cross_validation_experiment.py # 交叉验证实验CLI
+│   ├── utils.py                   # 实验脚本公共工具
 │   ├── submit_benchmark.sh        # SLURM: 基准实验提交
 │   ├── submit_ablation.sh         # SLURM: 消融实验提交
 │   └── submit_crossval.sh         # SLURM: 交叉验证提交
@@ -228,6 +230,8 @@ test_results = trainer.evaluate(test_loader)
 - [x] 数据加载与预处理模块 (`data/`)
 - [x] 数据增强模块 (`data/augmentation.py`)
 - [x] 模型架构模块 (`model.py`, `models/`)
+  - [x] HybridModel (完整CNN-Transformer，支持消融开关)
+  - [x] ConfigurableHybrid (消融实验适配器)
 - [x] 训练流程模块 (`training/trainer.py`)
 - [x] 单元测试模块 (`tests/`)
 - [x] 实验模块 (`experiments/`) - 144 tests, 100% pass (Windows环境2个temp权限error无关代码)
@@ -236,6 +240,8 @@ test_results = trainer.evaluate(test_loader)
   - [x] 交叉验证 (`cross_validation/`)
   - [x] 复杂度分析 (`complexity.py`)
   - [x] 可解释性可视化 (`visualization/`)
+- [x] 实验脚本统一架构 (benchmark/ablation/crossval 共享 models.HybridModel)
+- [x] 公共工具提取 (`scripts/utils.py`)
 
 ### 待实现模块 📋
 - [ ] 数据探索与预处理实验 (`data/visualization.py` 扩展)
@@ -315,13 +321,16 @@ from model import HybridModel
 | `data/custom_dataset.py` | 三数据集统一加载器 (核心) |
 | `data/augmentation.py` | 数据增强管道 |
 | `training/trainer.py` | 完整训练流程 (差分LR/AMP/早停) |
+| `models/hybrid_model.py` | CNN-Transformer混合模型 (支持消融开关) |
+| `models/configurable_hybrid.py` | 消融实验适配器 (ConfigurableHybrid) |
 | `experiments/metrics.py` | 评估指标计算 |
-| `experiments/benchmark/models.py` | 基准模型工厂 |
+| `experiments/benchmark/models.py` | 基准模型工厂 (ResNet/ViT/HybridBasic) |
 | `experiments/ablation/configs.py` | 消融配置定义 |
 | `experiments/cross_validation/validator.py` | K折交叉验证 |
 | `scripts/benchmark_experiment.py` | 基准对比实验CLI |
 | `scripts/ablation_experiment.py` | 消融实验CLI |
 | `scripts/cross_validation_experiment.py` | 交叉验证CLI |
+| `scripts/utils.py` | 实验脚本公共工具 (set_seed/get_device) |
 | `scripts/submit_benchmark.sh` | SLURM: 基准实验提交 |
 | `scripts/submit_ablation.sh` | SLURM: 消融实验提交 |
 | `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |
