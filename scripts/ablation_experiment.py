@@ -114,8 +114,8 @@ def evaluate_model_fn(
         'accuracy': metrics.accuracy,
         'macro_f1': metrics.f1_macro,
         'auc_roc': metrics.auc_roc_ovr,
-        'precision': metrics.precision,
-        'recall': metrics.recall,
+        'precision': float(np.mean(metrics.precision)) if metrics.precision else None,
+        'recall': float(np.mean(metrics.sensitivity)) if metrics.sensitivity else None,
     }
 
 

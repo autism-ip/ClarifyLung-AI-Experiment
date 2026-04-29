@@ -30,6 +30,7 @@ from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
 from models import HybridModel
+from training.trainer import TrainingConfig, get_optimizer
 from experiments.cross_validation import KFoldCrossValidator
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_training_curves
@@ -88,7 +89,14 @@ def train_fold(
 
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+
+    # 使用差分学习率（CNN小LR，Transformer大LR）
+    trainer_config = TrainingConfig(
+        learning_rate=config.learning_rate,
+        transformer_lr=config.transformer_lr,
+        weight_decay=config.weight_decay,
+    )
+    optimizer = get_optimizer(model, trainer_config)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     train_history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}

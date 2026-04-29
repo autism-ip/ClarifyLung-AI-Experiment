@@ -60,7 +60,7 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── cross_validation_experiment.py # 交叉验证实验CLI
 │   ├── baseline_experiment.py     # 小规模快速验证脚本
 │   ├── validate_pipeline.py       # 3步流水线烟雾测试
-│   ├── utils.py                   # 实验脚本公共工具
+│   ├── utils.py                   # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model)
 │   ├── submit_benchmark.sh        # SLURM: 基准实验提交
 │   ├── submit_ablation.sh         # SLURM: 消融实验提交
 │   └── submit_crossval.sh         # SLURM: 交叉验证提交

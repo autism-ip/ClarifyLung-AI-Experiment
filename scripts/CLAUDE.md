@@ -16,7 +16,10 @@ validate_pipeline.py         : 3步流水线烟雾测试
 submit_benchmark.sh          : SLURM批作业: 基准实验 (24h, --no-plot)
 submit_ablation.sh           : SLURM批作业: 消融实验 (48h)
 submit_crossval.sh           : SLURM批作业: 交叉验证 (72h)
-utils.py                     : 实验脚本公共工具 (set_seed, get_device)
+utils.py                     : 实验脚本公共工具
+                             - set_seed / get_device
+                             - split_dataset_with_transforms: 防泄漏的 train/val/test 划分
+                             - train_model: 通用训练循环 + 差分学习率 + 检查点保存
 
 法则: 可独立运行 · 命令行友好 · 失败优雅 · 本地CLI+远程SLURM双模式
         统一模型入口: 所有实验脚本共享 models.HybridModel 核心架构

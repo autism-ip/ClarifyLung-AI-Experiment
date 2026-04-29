@@ -260,8 +260,8 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
             'accuracy': test_metrics.accuracy,
             'macro_f1': test_metrics.f1_macro,
             'auc_roc': test_metrics.auc_roc_ovr,
-            'precision': test_metrics.precision,
-            'recall': test_metrics.recall,
+            'precision': float(np.mean(test_metrics.precision)) if test_metrics.precision else None,
+            'recall': float(np.mean(test_metrics.sensitivity)) if test_metrics.sensitivity else None,
             'training_time': training_time,
         }
         results.append(model_result)
