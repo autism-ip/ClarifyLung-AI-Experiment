@@ -92,11 +92,25 @@ class AttentionVisualizer:
         attention_weights = []
 
         def hook_fn(module, input, output):
-            # output: (attn_output, attn_weights)
-            # attn_weights: (batch, num_heads, seq_len, seq_len)
-            _, attn_weights = output
-            # 取第一个batch的平均
-            avg_weights = attn_weights[0].mean(dim=0).cpu().numpy()
+            # PyTorch nn.MultiheadAttention 默认 need_weights=False
+            # TransformerEncoderLayer 调用时不传 need_weights=True
+            # 因此 output 可能是单个 tensor，需要重新调用获取 weights
+            if isinstance(output, tuple) and output[1] is not None:
+                attn_weights = output[1]
+            else:
+                # 重新调用以获取 attention weights (不传 average_attn_weights，保持返回 4D)
+                with torch.no_grad():
+                    _, attn_weights = module(
+                        input[0], input[0], input[0],
+                        need_weights=True
+                    )
+            # attn_weights 维度取决于 PyTorch 版本和 average_attn_weights 设置：
+            #   4D: (batch, num_heads, seq_len, seq_len) -> mean over heads
+            #   3D: (batch, seq_len, seq_len) -> already averaged
+            if attn_weights.dim() == 4:
+                avg_weights = attn_weights[0].mean(dim=0).cpu().numpy()
+            else:
+                avg_weights = attn_weights[0].cpu().numpy()
             attention_weights.append(avg_weights)
 
         # 获取目标层

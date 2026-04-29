@@ -678,8 +678,9 @@ fig = plot_class_distribution(
 
 # 饼图：单数据集类别占比
 fig = plot_pie_chart(
-    {0: 1208, 1: 1200, 2: 1201},
-    class_names=["normal", "benign", "malignant"],
+    [1208, 1200, 1201],                           # 各类别样本数列表
+    labels=["normal", "benign", "malignant"],      # 类别名称列表
+    title="Class Distribution",
     save_path="outputs/figures/class_pie_chart.png"
 )
 ```
@@ -717,7 +718,7 @@ input_tensor = torch.randn(1, 3, 224, 224)
 
 # 生成目标类别的热力图
 visualizer = GradCAMVisualizer(model)
-heatmap = visualizer.generate_heatmap(input_tensor, target_class=2)
+heatmap = visualizer.generate_heatmap(input_tensor, target_category=2)
 
 # 叠加到原图
 from experiments.visualization import overlay_heatmap
@@ -822,8 +823,8 @@ img_tensor = transform(Image.open(img_path).convert("RGB")).unsqueeze(0)
 
 # 3. Grad-CAM：查看CNN关注的区域
 gcam = GradCAMVisualizer(model)
-heatmap = gcam.generate_heatmap(img_tensor, target_class=0)  # target_class=0 为 normal
-overlay = overlay_heatmap(img_tensor, heatmap, alpha=0.5)
+heatmap = gcam.generate_heatmap(img_tensor, target_category=0)  # target_category=0 为 normal
+overlay = overlay_heatmap(heatmap, img_tensor.squeeze(0).permute(1, 2, 0).numpy(), alpha=0.5)
 # overlay 为 numpy uint8 数组，可用 cv2.imwrite 保存
 
 # 4. Attention Map：查看Transformer关注的token
@@ -834,7 +835,7 @@ if attn.has_attention():
 ```
 
 **关键参数说明**：
-- `target_class`: 目标类别索引 (0=normal, 1=benign, 2=malignant)
+- `target_category`: 目标类别索引 (0=normal, 1=benign, 2=malignant)
 - `alpha`: 热力图叠加透明度 (0.0-1.0)
 - `weights[0]`: 取第一层注意力头的权重
 
