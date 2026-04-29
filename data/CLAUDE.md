@@ -12,7 +12,6 @@ augmentation.py   : 数据增强策略
                   - 基础增强: 旋转/翻转/裁剪/颜色抖动
                   - 高级增强: CutMix/MixUp/RandomErasing
                   - get_train_augmentation / get_val_augmentation
-dataset.py        : 基础数据集类 (已被custom_dataset替代)
 visualization.py  : 数据可视化工具，类别分布图、样本网格展示
 
 法则: 输入输出明确 · 支持配置驱动 · 可复现随机种子 · 路径自适应探测

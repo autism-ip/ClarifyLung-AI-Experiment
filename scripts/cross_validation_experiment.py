@@ -289,17 +289,13 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
             config.num_epochs, device, config, fold_idx
         )
 
-        # 加载最佳模型评估测试
-        test_metrics = evaluate_fold(model, val_loader, device)  # 用验证集作为测试
-
+        # K折交叉验证中，验证指标即该折的泛化结果
+        # 不重复用验证集作为"测试集"，避免数据泄漏
         fold_result = {
             'fold': fold_idx + 1,
             'val_accuracy': val_metrics['accuracy'],
             'val_f1': val_metrics['macro_f1'],
             'val_auc': val_metrics['auc_roc'],
-            'test_accuracy': test_metrics['accuracy'],
-            'test_f1': test_metrics['macro_f1'],
-            'test_auc': test_metrics['auc_roc'],
             'training_time': training_time
         }
         fold_results.append(fold_result)
@@ -307,7 +303,6 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
 
         print(f"  Fold {fold_idx+1} 结果:")
         print(f"    Val Acc: {val_metrics['accuracy']:.4f}, F1: {val_metrics['macro_f1']:.4f}")
-        print(f"    Test Acc: {test_metrics['accuracy']:.4f}, F1: {test_metrics['macro_f1']:.4f}")
 
         # 保存checkpoint
         if config.save_checkpoints:
@@ -319,9 +314,6 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
     val_accs = [r['val_accuracy'] for r in fold_results]
     val_f1s = [r['val_f1'] for r in fold_results]
     val_aucs = [r['val_auc'] for r in fold_results]
-    test_accs = [r['test_accuracy'] for r in fold_results]
-    test_f1s = [r['test_f1'] for r in fold_results]
-    test_aucs = [r['test_auc'] for r in fold_results]
     times = [r['training_time'] for r in fold_results]
 
     summary = {
@@ -338,18 +330,6 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
         'val_auc': {
             'mean': np.mean(val_aucs),
             'std': np.std(val_aucs)
-        },
-        'test_accuracy': {
-            'mean': np.mean(test_accs),
-            'std': np.std(test_accs)
-        },
-        'test_f1': {
-            'mean': np.mean(test_f1s),
-            'std': np.std(test_f1s)
-        },
-        'test_auc': {
-            'mean': np.mean(test_aucs),
-            'std': np.std(test_aucs)
         },
         'total_training_time': np.sum(times),
         'avg_fold_time': np.mean(times)

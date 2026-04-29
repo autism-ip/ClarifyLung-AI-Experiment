@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
-from training.trainer import TrainingConfig, Trainer
+from training.trainer import TrainingConfig, Trainer, get_optimizer
 from models import HybridModel
 from experiments.benchmark import create_resnet50, create_vit, create_hybrid_basic
 from experiments.benchmark import BenchmarkResult, generate_comparison_table, save_results
@@ -119,18 +119,13 @@ def train_single_model(
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
 
-    # 差分学习率
-    if hasattr(model, 'cnn_parameters'):
-        cnn_params = model.cnn_parameters()
-        transformer_params = model.transformer_parameters() if hasattr(model, 'transformer_parameters') else []
-    else:
-        cnn_params = []
-        transformer_params = list(model.parameters())
-
-    optimizer = optim.AdamW([
-        {'params': cnn_params, 'lr': config.learning_rate},
-        {'params': transformer_params, 'lr': config.transformer_lr}
-    ], weight_decay=config.weight_decay)
+    # 使用 Trainer 的 get_optimizer 实现差分学习率 (前缀匹配分组)
+    trainer_config = TrainingConfig(
+        learning_rate=config.learning_rate,
+        transformer_lr=config.transformer_lr,
+        weight_decay=config.weight_decay,
+    )
+    optimizer = get_optimizer(model, trainer_config)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
 

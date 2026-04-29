@@ -5,13 +5,22 @@
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
-from .dataset import XRayDataset, get_data_loaders
+from .custom_dataset import (
+    CustomLungDataset,
+    merge_datasets,
+    split_dataset,
+    create_weighted_sampler,
+    LabelSchema,
+)
 from .augmentation import get_train_augmentation, get_val_augmentation
 from .visualization import plot_class_distribution, plot_sample_grid
 
 __all__ = [
-    'XRayDataset',
-    'get_data_loaders',
+    'CustomLungDataset',
+    'merge_datasets',
+    'split_dataset',
+    'create_weighted_sampler',
+    'LabelSchema',
     'get_train_augmentation',
     'get_val_augmentation',
     'plot_class_distribution',

@@ -6,7 +6,9 @@ CNN-Transformer训练流程模块
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+import logging
 import os
+import random
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Callable, Any
@@ -16,9 +18,12 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR, OneCycleLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, OneCycleLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -58,6 +63,8 @@ class TrainingConfig:
     # 早停
     early_stopping_patience: int = 10
     early_stopping_delta: float = 0.001
+    early_stopping_monitor: str = "val_acc"  # val_acc / val_loss
+    early_stopping_mode: str = "max"  # max / min
 
 
 @dataclass
@@ -315,6 +322,9 @@ class Trainer:
             images = images.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
+            # 清零梯度 (在计算前执行，符合规范)
+            self.optimizer.zero_grad(set_to_none=True)
+
             # 混合精度训练
             if self.config.use_amp and self.scaler is not None:
                 with torch.amp.autocast(self.device.type):
@@ -336,9 +346,6 @@ class Trainer:
             total_correct += predicted.eq(targets).sum().item()
             total_samples += targets.size(0)
             total_loss += loss.item()
-
-            # 清零梯度
-            self.optimizer.zero_grad(set_to_none=True)
 
             # 更新学习率（OneCycle调度器需要每步更新）
             if isinstance(self.scheduler, OneCycleLR):
@@ -404,10 +411,14 @@ class Trainer:
         Returns:
             TrainingMetrics: 训练指标记录
         """
-        print(f"Starting training for {self.config.num_epochs} epochs")
-        print(f"Device: {self.device}")
-        print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
-        print("-" * 80)
+        logger.info(f"Starting training for {self.config.num_epochs} epochs")
+        logger.info(f"Device: {self.device}")
+        logger.info(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
+        logger.info("-" * 80)
+
+        # 早停监控指标选择
+        monitor = self.config.early_stopping_monitor
+        mode = self.config.early_stopping_mode
 
         for epoch in range(self.config.num_epochs):
             self.current_epoch = epoch
@@ -426,10 +437,10 @@ class Trainer:
 
             # 更新学习率
             if self.scheduler is not None and not isinstance(self.scheduler, OneCycleLR):
-                if isinstance(self.scheduler, CosineAnnealingLR):
-                    self.scheduler.step()
-                else:
+                if isinstance(self.scheduler, ReduceLROnPlateau):
                     self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
 
             current_lr = self.optimizer.param_groups[0]['lr']
 
@@ -442,18 +453,31 @@ class Trainer:
             self.metrics.epoch_times.append(epoch_time)
 
             # 打印进度
-            print(f"Epoch [{epoch+1:03d}/{self.config.num_epochs:03d}] "
-                  f"Time: {epoch_time:.1f}s | "
-                  f"LR: {current_lr:.2e} | "
-                  f"Train Loss: {train_loss:.4f} Acc: {train_acc:.2f}% | "
-                  f"Val Loss: {val_loss:.4f} Acc: {val_acc:.2f}%")
+            logger.info(
+                f"Epoch [{epoch+1:03d}/{self.config.num_epochs:03d}] "
+                f"Time: {epoch_time:.1f}s | "
+                f"LR: {current_lr:.2e} | "
+                f"Train Loss: {train_loss:.4f} Acc: {train_acc:.2f}% | "
+                f"Val Loss: {val_loss:.4f} Acc: {val_acc:.2f}%"
+            )
 
-            # 保存最佳模型
-            if val_acc > self.best_val_acc:
-                self.best_val_acc = val_acc
-                self.best_val_loss = val_loss
+            # 确定当前监控值并判断是否为最佳
+            current_val = val_acc if monitor == "val_acc" else val_loss
+            is_best = False
+            if mode == "max":
+                is_best = current_val > self.best_val_acc + self.config.early_stopping_delta
+            else:
+                is_best = current_val < self.best_val_loss - self.config.early_stopping_delta
+
+            if is_best:
+                if monitor == "val_acc":
+                    self.best_val_acc = current_val
+                    self.best_val_loss = val_loss
+                else:
+                    self.best_val_loss = current_val
+                    self.best_val_acc = val_acc
                 self.save_checkpoint("best_model.pth")
-                print(f"  ✓ New best model saved! (val_acc: {val_acc:.2f}%)")
+                logger.info(f"  New best model saved! ({monitor}: {current_val:.4f})")
                 self.patience_counter = 0
             else:
                 self.patience_counter += 1
@@ -464,11 +488,11 @@ class Trainer:
 
             # 早停检查
             if self.patience_counter >= self.config.early_stopping_patience:
-                print(f"\nEarly stopping triggered after {epoch+1} epochs")
+                logger.info(f"Early stopping triggered after {epoch+1} epochs")
                 break
 
-        print("-" * 80)
-        print(f"Training completed! Best val_acc: {self.best_val_acc:.2f}%")
+        logger.info("-" * 80)
+        logger.info(f"Training completed! Best val_acc: {self.best_val_acc:.2f}%")
 
         # 保存最终模型
         self.save_checkpoint("final_model.pth")
@@ -476,7 +500,7 @@ class Trainer:
         # 保存训练指标
         metrics_path = Path(self.config.output_dir) / "training_metrics.json"
         self.metrics.save(str(metrics_path))
-        print(f"Metrics saved to {metrics_path}")
+        logger.info(f"Metrics saved to {metrics_path}")
 
         return self.metrics
 
@@ -491,7 +515,7 @@ class Trainer:
         if loader is None:
             raise ValueError("No test loader provided")
 
-        print("\nEvaluating on test set...")
+        logger.info("Evaluating on test set...")
         test_loss, test_acc, all_preds, all_targets = self.validate(loader)
 
         # 计算更多指标
@@ -504,13 +528,13 @@ class Trainer:
         precision = precision_score(all_targets, all_preds, average='weighted')
         recall = recall_score(all_targets, all_preds, average='weighted')
 
-        print(f"Test Loss: {test_loss:.4f}")
-        print(f"Test Accuracy: {test_acc:.2f}%")
-        print(f"F1 Score: {f1:.4f}")
-        print(f"Precision: {precision:.4f}")
-        print(f"Recall: {recall:.4f}")
-        print("\nClassification Report:")
-        print(classification_report(all_targets, all_preds, target_names=["normal", "benign", "malignant"]))
+        logger.info(f"Test Loss: {test_loss:.4f}")
+        logger.info(f"Test Accuracy: {test_acc:.2f}%")
+        logger.info(f"F1 Score: {f1:.4f}")
+        logger.info(f"Precision: {precision:.4f}")
+        logger.info(f"Recall: {recall:.4f}")
+        logger.info("\nClassification Report:")
+        logger.info("\n" + classification_report(all_targets, all_preds, target_names=["normal", "benign", "malignant"]))
 
         return {
             'test_loss': test_loss,
@@ -523,32 +547,71 @@ class Trainer:
         }
 
     def save_checkpoint(self, filename: str):
-        """保存模型检查点"""
+        """保存模型检查点 (含完整训练状态，支持精确恢复)"""
         checkpoint_path = Path(self.config.output_dir) / filename
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-        torch.save({
+        state = {
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_val_acc': self.best_val_acc,
             'best_val_loss': self.best_val_loss,
+            'patience_counter': self.patience_counter,
             'config': self.config,
-        }, checkpoint_path)
+            'rng_states': {
+                'python': random.getstate(),
+                'numpy': np.random.get_state(),
+                'torch': torch.get_rng_state(),
+                'torch_cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+            },
+        }
+
+        # 保存调度器状态 (如果存在)
+        if self.scheduler is not None:
+            state['scheduler_state_dict'] = self.scheduler.state_dict()
+
+        # 保存 AMP scaler 状态 (如果存在)
+        if self.scaler is not None:
+            state['scaler_state_dict'] = self.scaler.state_dict()
+
+        torch.save(state, checkpoint_path)
+        logger.debug(f"Checkpoint saved: {checkpoint_path}")
 
     def load_checkpoint(self, checkpoint_path: str):
-        """加载模型检查点"""
-        print(f"Loading checkpoint from {checkpoint_path}")
-        # 使用weights_only=False以兼容PyTorch 2.6+
+        """加载模型检查点 (恢复完整训练状态)"""
+        logger.info(f"Loading checkpoint from {checkpoint_path}")
+        # weights_only=False: 需要恢复完整对象(optimizer/rng state等)
+        # 仅加载来自可信来源的检查点
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
 
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.current_epoch = checkpoint['epoch']
-        self.best_val_acc = checkpoint['best_val_acc']
-        self.best_val_loss = checkpoint['best_val_loss']
+        self.best_val_acc = checkpoint.get('best_val_acc', 0.0)
+        self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        self.patience_counter = checkpoint.get('patience_counter', 0)
 
-        print(f"Resumed from epoch {self.current_epoch}, best_val_acc: {self.best_val_acc:.2f}%")
+        # 恢复调度器状态
+        if 'scheduler_state_dict' in checkpoint and self.scheduler is not None:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        # 恢复 AMP scaler 状态
+        if 'scaler_state_dict' in checkpoint and self.scaler is not None:
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
+
+        # 恢复随机状态 (支持精确复现)
+        rng_states = checkpoint.get('rng_states', {})
+        if rng_states.get('python'):
+            random.setstate(rng_states['python'])
+        if rng_states.get('numpy') is not None:
+            np.random.set_state(rng_states['numpy'])
+        if rng_states.get('torch') is not None:
+            torch.set_rng_state(rng_states['torch'])
+        if rng_states.get('torch_cuda') is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(rng_states['torch_cuda'])
+
+        logger.info(f"Resumed from epoch {self.current_epoch}, best_val_acc: {self.best_val_acc:.2f}%")
 
 
 # =============================================================================
