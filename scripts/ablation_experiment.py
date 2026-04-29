@@ -86,9 +86,11 @@ class AblationExperimentConfig:
 def evaluate_model_fn(
     model: nn.Module,
     val_loader: DataLoader,
-    device: torch.device
+    device: torch.device,
+    save_dir: str = None,
+    prefix: str = ""
 ) -> Dict[str, float]:
-    """评估函数"""
+    """评估函数，可选保存预测数组供可视化CLI复用"""
 
     model.eval()
     all_preds = []
@@ -109,6 +111,14 @@ def evaluate_model_fn(
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
     all_probs = np.array(all_probs)
+
+    # 保存预测数组供可视化CLI自动读取
+    if save_dir:
+        sp = Path(save_dir)
+        sp.mkdir(parents=True, exist_ok=True)
+        np.save(sp / f"{prefix}y_true.npy", all_labels)
+        np.save(sp / f"{prefix}y_pred.npy", all_preds)
+        np.save(sp / f"{prefix}y_prob.npy", all_probs)
 
     metrics = compute_metrics(all_labels, all_preds, all_probs)
 
@@ -284,8 +294,12 @@ def run_ablation_experiment(config: AblationExperimentConfig):
             weight_decay=config.weight_decay,
         )
 
-        # 评估
-        metrics = evaluate_model_fn(model, val_loader, device)
+        # 评估（保存预测数组供可视化CLI复用）
+        metrics = evaluate_model_fn(
+            model, val_loader, device,
+            save_dir=str(config.output_dir),
+            prefix=f"{cfg.name}_"
+        )
 
         elapsed = time.time() - start_time
         metrics['training_time'] = elapsed

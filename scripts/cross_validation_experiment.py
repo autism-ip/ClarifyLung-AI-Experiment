@@ -186,6 +186,13 @@ def train_fold(
     all_labels = np.array(all_labels)
     all_probs = np.array(all_probs)
 
+    # 保存预测数组供可视化CLI复用
+    out_dir = Path(config.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_dir / f"fold_{fold+1}_y_true.npy", all_labels)
+    np.save(out_dir / f"fold_{fold+1}_y_pred.npy", all_preds)
+    np.save(out_dir / f"fold_{fold+1}_y_prob.npy", all_probs)
+
     metrics = compute_metrics(all_labels, all_preds, all_probs)
 
     val_metrics = {

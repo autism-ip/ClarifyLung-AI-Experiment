@@ -123,6 +123,8 @@ ClarifyLung-AI-Experiment/
 │   ├── submit_benchmark.sh          # SLURM: 基准实验提交
 │   ├── submit_ablation.sh           # SLURM: 消融实验提交
 │   ├── submit_crossval.sh           # SLURM: 交叉验证提交
+│   ├── visualize_experiment_results.py  # 实验结果可视化CLI (自动读取JSON+.npy)
+│   ├── visualize_gradcam.py         # Grad-CAM单图可视化CLI
 │   ├── utils.py                     # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model, create_quick_test_datasets)
 │   └── CLAUDE.md
 ├── tests/                           # 单元测试模块
@@ -177,7 +179,7 @@ scripts/                                    ← 依赖 experiments + training + 
 | `models/` | CNN-Transformer混合模型架构及组件 | `HybridModel` |
 | `training/` | 完整训练流程：差分学习率、AMP、早停、检查点 | `Trainer`, `TrainingConfig` |
 | `experiments/` | 基准对比、消融实验、交叉验证、可解释性可视化、复杂度分析 | `compute_metrics`, `ModelBenchmark`, `AblationStudy`, `KFoldCrossValidator` |
-| `scripts/` | 可独立运行的实验CLI入口 + SLURM批作业脚本 | `benchmark_experiment.py`, `ablation_experiment.py`, `cross_validation_experiment.py` |
+| `scripts/` | 可独立运行的实验CLI入口 + SLURM批作业脚本 + 可视化CLI | `benchmark_experiment.py`, `ablation_experiment.py`, `cross_validation_experiment.py`, `visualize_experiment_results.py`, `visualize_gradcam.py` |
 | `tests/` | 核心功能单元测试 | pytest 测试套件 |
 
 ---
@@ -626,6 +628,70 @@ sbatch scripts/submit_crossval.sh
 | `benchmark_experiment.py` | 模型对比柱状图 | `outputs/benchmark/model_comparison.png` | 各模型 accuracy/f1 对比 |
 | `benchmark_experiment.py` | 训练曲线 | `outputs/benchmark/training_curves.png` | 各模型 loss/acc 曲线 |
 | `cross_validation_experiment.py` | 交叉验证训练曲线 | `outputs/cross_validation/cross_validation_curves.png` | 各折平均 loss/acc |
+
+#### CLI 可视化脚本（自动消费实验输出）
+
+实验脚本运行后会生成 JSON 报告和 `.npy` 预测数组，以下 CLI 脚本自动读取这些产物生成图表。
+
+**`visualize_experiment_results.py` — 批量实验结果可视化**
+
+```bash
+# 自动检测实验类型，生成全部可视化
+python scripts/visualize_experiment_results.py --experiment-dir outputs/benchmark
+python scripts/visualize_experiment_results.py --experiment-dir outputs/ablation
+python scripts/visualize_experiment_results.py --experiment-dir outputs/cross_validation
+
+# 强制指定实验类型（当目录中有多个JSON时）
+python scripts/visualize_experiment_results.py --experiment-dir outputs/benchmark --type benchmark
+
+# 仅生成对比图（不生成混淆矩阵）
+python scripts/visualize_experiment_results.py --experiment-dir outputs/benchmark --only comparison
+
+# 仅生成混淆矩阵（需要 .npy 文件）
+python scripts/visualize_experiment_results.py --experiment-dir outputs/benchmark --only confusion
+```
+
+输出产物：
+- `*_comparison_revisualized.png` — 模型/配置对比柱状图
+- `*_confusion_revisualized.png` — 各模型/各折混淆矩阵
+
+**`visualize_gradcam.py` — 单图 Grad-CAM 热力图**
+
+```bash
+# 使用预测类别生成热力图
+python scripts/visualize_gradcam.py \
+    --image datasets/IQ-OTHNCCD/Normal cases/normal_001.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --output outputs/figures/gradcam_normal.png
+
+# 指定目标类别（如 malignant=2）
+python scripts/visualize_gradcam.py \
+    --image path/to/image.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --target-class 2 \
+    --output outputs/figures/gradcam_malignant.png
+
+# 自定义模型尺寸（如果 checkpoint 是用小模型训练的）
+python scripts/visualize_gradcam.py \
+    --image path/to/image.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --model-dim 128 --num-layers 2 \
+    --output outputs/figures/gradcam.png
+```
+
+参数说明：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--image` | 输入图像路径（必填） | — |
+| `--checkpoint` | 模型权重路径 `.pth`（必填） | — |
+| `--output` | 输出热力图路径 `.png`（必填） | — |
+| `--target-class` | 目标类别索引（0=normal, 1=benign, 2=malignant），不指定则使用预测类别 | `None` |
+| `--alpha` | 热力图叠加透明度 | `0.5` |
+| `--image-size` | 输入图像尺寸 | `224` |
+| `--model-dim` | 模型维度（需与 checkpoint 一致） | `256` |
+| `--num-layers` | Transformer 层数（需与 checkpoint 一致） | `4` |
+
+---
 
 #### 手动调用的可视化（独立代码片段）
 

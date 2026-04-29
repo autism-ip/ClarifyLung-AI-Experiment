@@ -132,9 +132,11 @@ def train_single_model(
 def evaluate_model(
     model: nn.Module,
     test_loader: DataLoader,
-    device: torch.device
+    device: torch.device,
+    save_dir: str = None,
+    prefix: str = ""
 ) -> dict:
-    """在测试集上评估模型"""
+    """在测试集上评估模型，可选保存预测数组供可视化CLI复用"""
 
     model.eval()
     all_preds = []
@@ -155,6 +157,14 @@ def evaluate_model(
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
     all_probs = np.array(all_probs)
+
+    # 保存预测数组供可视化CLI自动读取
+    if save_dir:
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        np.save(save_path / f"{prefix}y_true.npy", all_labels)
+        np.save(save_path / f"{prefix}y_pred.npy", all_preds)
+        np.save(save_path / f"{prefix}y_prob.npy", all_probs)
 
     # 计算各项指标
     metrics = compute_metrics(all_labels, all_preds, all_probs)
@@ -275,7 +285,11 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
             if checkpoint_path.exists():
                 model.load_state_dict(torch.load(checkpoint_path, map_location=device))
 
-        test_metrics = evaluate_model(model, test_loader, device)
+        test_metrics = evaluate_model(
+            model, test_loader, device,
+            save_dir=config.output_dir,
+            prefix=f"{model_name}_"
+        )
 
         # 保存结果
         model_result = {

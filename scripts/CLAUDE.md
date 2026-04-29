@@ -13,6 +13,12 @@ baseline_experiment.py       : 小规模快速验证脚本
                             - 分层抽样 + 类别不平衡检测
 validate_pipeline.py         : 3步流水线烟雾测试
                             - 数据加载 → 模型前向 → 训练流程
+visualize_experiment_results.py : 实验结果可视化CLI (自动读取JSON+.npy)
+                                - 支持 benchmark/ablation/crossval 三种实验类型自动检测
+                                - 自动生成对比图 + 混淆矩阵 (需实验脚本保存的.npy)
+visualize_gradcam.py         : Grad-CAM单图可视化CLI
+                            - 需手动指定 --image, --checkpoint, --output
+                            - 支持自动预测类别或手动指定 target-class
 submit_benchmark.sh          : SLURM批作业: 基准实验 (24h, --no-plot)
                              - 支持 QUICK_TEST=1 环境变量快速自检
 submit_ablation.sh           : SLURM批作业: 消融实验 (48h)

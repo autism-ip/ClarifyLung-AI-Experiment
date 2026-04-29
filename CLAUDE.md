@@ -66,7 +66,13 @@ Python + PyTorch + torchvision + timm + albumentations
 │   │                              #   - create_quick_test_datasets (200样本快速子集)
 │   ├── submit_benchmark.sh        # SLURM: 基准实验提交
 │   ├── submit_ablation.sh         # SLURM: 消融实验提交
-│   └── submit_crossval.sh         # SLURM: 交叉验证提交
+│   ├── submit_crossval.sh         # SLURM: 交叉验证提交
+│   ├── visualize_experiment_results.py  # 实验结果可视化CLI (自动读取JSON+.npy)
+│   │                                    #   - 支持 benchmark/ablation/crossval 三种实验类型自动检测
+│   │                                    #   - 自动生成对比图 + 混淆矩阵 (需实验脚本保存的.npy)
+│   ├── visualize_gradcam.py       # Grad-CAM单图可视化CLI
+│   │                              #   - 需手动指定 --image, --checkpoint, --output
+│   │                              #   - 支持自动预测类别或手动指定 target-class
 ├── configs/           # 配置文件模块
 │   ├── __init__.py
 │   └── dataset_config.py    # 数据集路径配置 (环境变量驱动)
@@ -347,6 +353,8 @@ from model import HybridModel
 | `scripts/submit_benchmark.sh` | SLURM: 基准实验提交 |
 | `scripts/submit_ablation.sh` | SLURM: 消融实验提交 |
 | `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |
+| `scripts/visualize_experiment_results.py` | 实验结果可视化CLI (自动读取JSON+.npy，支持 benchmark/ablation/crossval 三种实验类型自动检测) |
+| `scripts/visualize_gradcam.py` | Grad-CAM单图可视化CLI (需手动指定 --image, --checkpoint, --output) |
 | `configs/dataset_config.py` | 数据集路径配置 (环境变量驱动) |
 | `tests/` | 单元测试套件 |
 | `requirements.txt` | Python依赖列表 |
