@@ -9,6 +9,10 @@ ablation_experiment.py       : 消融实验CLI入口 (5种配置逐层叠加)
                             - 使用 models.ConfigurableHybrid (基于真实组件)
 cross_validation_experiment.py : 交叉验证实验CLI入口 (K折+统计检验)
                             - 使用 models.HybridModel (与benchmark一致)
+baseline_experiment.py       : 小规模快速验证脚本
+                            - 分层抽样 + 类别不平衡检测
+validate_pipeline.py         : 3步流水线烟雾测试
+                            - 数据加载 → 模型前向 → 训练流程
 submit_benchmark.sh          : SLURM批作业: 基准实验 (24h, --no-plot)
 submit_ablation.sh           : SLURM批作业: 消融实验 (48h)
 submit_crossval.sh           : SLURM批作业: 交叉验证 (72h)

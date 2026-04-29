@@ -31,3 +31,10 @@ datasets/
 
 # Local config
 .claude/settings.local.json
+
+# Claude skills (external dependencies)
+.agents/
+skills-lock.json
+
+# Test cache
+.pytest_cache/

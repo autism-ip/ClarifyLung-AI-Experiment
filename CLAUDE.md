@@ -58,6 +58,8 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── benchmark_experiment.py    # 基准模型对比实验CLI
 │   ├── ablation_experiment.py     # 消融实验CLI
 │   ├── cross_validation_experiment.py # 交叉验证实验CLI
+│   ├── baseline_experiment.py     # 小规模快速验证脚本
+│   ├── validate_pipeline.py       # 3步流水线烟雾测试
 │   ├── utils.py                   # 实验脚本公共工具
 │   ├── submit_benchmark.sh        # SLURM: 基准实验提交
 │   ├── submit_ablation.sh         # SLURM: 消融实验提交
@@ -72,8 +74,6 @@ Python + PyTorch + torchvision + timm + albumentations
 │   └── slurm/          # SLURM作业日志
 ├── docs/              # 文档资料模块
 ├── model.py           # 兼容入口，从 models 包 re-export
-├── baseline_experiment.py   # 小规模快速验证脚本
-├── validate_pipeline.py     # 3步流水线烟雾测试
 ├── requirements.txt   # Python依赖
 ├── DEPLOY.md          # 远程服务器部署指南
 ├── README.md          # 项目说明文档

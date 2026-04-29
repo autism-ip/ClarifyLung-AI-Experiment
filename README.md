@@ -91,9 +91,12 @@ ClarifyLung-AI-Experiment/
 │   ├── benchmark_experiment.py      # 基准模型对比实验 (CLI入口)
 │   ├── ablation_experiment.py       # 消融实验 (CLI入口)
 │   ├── cross_validation_experiment.py # 交叉验证实验 (CLI入口)
+│   ├── baseline_experiment.py       # 小规模快速验证脚本
+│   ├── validate_pipeline.py         # 3步流水线烟雾测试
 │   ├── submit_benchmark.sh          # SLURM: 基准实验提交
 │   ├── submit_ablation.sh           # SLURM: 消融实验提交
 │   ├── submit_crossval.sh           # SLURM: 交叉验证提交
+│   ├── utils.py                     # 实验脚本公共工具
 │   └── CLAUDE.md
 ├── tests/                           # 单元测试模块
 │   ├── test_dataset_loading.py      # 数据集加载测试
@@ -107,8 +110,6 @@ ClarifyLung-AI-Experiment/
 │   └── slurm/                       # SLURM日志
 ├── docs/                            # 文档资料
 ├── model.py                         # 兼容入口 (从models包re-export)
-├── baseline_experiment.py           # 小规模快速验证脚本
-├── validate_pipeline.py             # 3步流水线烟雾测试
 ├── requirements.txt                 # Python依赖
 ├── DEPLOY.md                        # 远程服务器部署指南
 ├── CLAUDE.md                        # 项目架构文档 (L1)
