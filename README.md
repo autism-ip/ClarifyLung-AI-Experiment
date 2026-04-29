@@ -16,6 +16,34 @@
 
 ---
 
+## 5分钟上手检查清单
+
+> 克隆项目后，按以下顺序验证环境，确认无误再运行全量实验。
+
+| 步骤 | 命令 | 预期结果 | 失败排查 |
+|------|------|---------|---------|
+| 1 | `conda create -n lung_cancer python=3.10` | 环境创建成功 | 检查conda是否安装 |
+| 2 | `pip install -r requirements.txt` | 依赖安装无报错 | 见下方 **GPU安装顺序警告** |
+| 3 | `python scripts/validate_pipeline.py` | 3步全部 PASSED | 见下方 **验证失败排查** |
+| 4 | `python -m pytest tests/ -v` | 46 passed, 9 skipped | Windows temp权限错误见FAQ |
+| 5 | `python scripts/benchmark_experiment.py --quick-test` | 1epoch内完成 | 数据路径错误见FAQ |
+
+**GPU安装顺序警告（重要）**：
+
+```bash
+# GPU服务器必须先装CUDA版PyTorch，再装requirements.txt
+# 否则requirements.txt中的 torch>=2.0.0 会安装CPU版本
+pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+pip install -r requirements.txt
+```
+
+**验证失败排查**：
+- `Step 1 FAILED` → 数据集路径错误，检查 `LUNG_DATASET_DIR` 或 `configs/dataset_config.py`
+- `Step 2 FAILED` → 模型依赖缺失，检查 `timm` 是否安装
+- `Step 3 FAILED` → CUDA/驱动问题，或内存不足，尝试减小batch_size
+
+---
+
 ## 文件目录树
 
 ```
@@ -211,6 +239,27 @@ python scripts/download_datasets.py
 ---
 
 ## 快速开始
+
+### 第一步：验证环境（强烈推荐）
+
+运行烟雾测试，确认数据加载、模型创建、训练流程全部正常：
+
+```bash
+python scripts/validate_pipeline.py
+```
+
+**预期输出**：
+```
+[OK] Step 1 PASSED: Data loading works correctly
+[OK] Step 2 PASSED: Model creation and forward pass work correctly
+[OK] Step 3 PASSED: Training pipeline works!
+ALL CHECKS PASSED - Pipeline is ready for full experiments!
+```
+
+此脚本使用小模型配置（model_dim=128, nhead=4, num_layers=2）和32样本子集，
+在CPU上约30秒完成，在GPU上约10秒完成。适合作为每次实验前的健康检查。
+
+---
 
 ### 方式一：Python API 编程式调用
 
@@ -621,6 +670,125 @@ python -m pytest tests/ --cov=. --cov-report=html
 
 ---
 
+## 输出目录结构
+
+实验运行后，`outputs/` 目录结构如下：
+
+```
+outputs/
+├── checkpoints/                    # 模型检查点 (.pth)
+│   ├── best_model.pth              # 最佳模型权重
+│   └── latest_model.pth            # 最新模型权重
+├── logs/                           # TensorBoard 日志
+│   └── experiment_YYYYMMDD_HHMMSS/
+│       ├── events.out.tfevents.*   # 标量曲线
+│       └── hparams.yaml            # 超参数记录
+├── figures/                        # 可视化图表
+│   ├── training_curves.png         # loss/acc 曲线
+│   ├── confusion_matrix.png        # 混淆矩阵
+│   └── *.png                       # 其他实验图表
+├── benchmark/                      # 基准实验输出
+│   ├── benchmark_results.json      # 原始数据
+│   ├── benchmark_table.md          # Markdown 对比表
+│   ├── model_comparison.png        # 柱状图
+│   └── *_best.pth                  # 各模型最佳权重
+├── ablation/                       # 消融实验输出
+│   ├── ablation_results.json
+│   ├── ablation_table.md
+│   └── *_best.pth
+├── cross_validation/               # 交叉验证输出
+│   ├── cross_validation_results.json   # 各折结果
+│   ├── cross_validation_report.md      # 统计报告
+│   ├── cross_validation_curves.png     # 训练曲线
+│   └── fold_*_best.pth                 # 各折权重
+└── slurm/                          # SLURM 作业日志
+    ├── benchmark_12345.out
+    ├── benchmark_12345.err
+    └── ...
+```
+
+**结果解读**：
+- `.json` 文件包含完整数值结果，可用于二次分析
+- `.md` 表格可直接粘贴到论文/报告中
+- `.pth` 权重可用 `torch.load()` 加载继续训练或推理
+
+---
+
+## 常见问题 (FAQ)
+
+### Q1: `CUDA out of memory` 怎么解决？
+
+```bash
+# 方案1: 减小 batch_size
+python scripts/benchmark_experiment.py --batch-size 16
+
+# 方案2: 减小模型尺寸 (修改脚本中的 model_dim 和 num_layers)
+# model_dim=128, num_layers=2 可在 8GB 显存运行
+
+# 方案3: 禁用 AMP (极少数旧GPU不支持)
+# 在 TrainingConfig 中设置 use_amp=False
+```
+
+### Q2: `Dataset not found` 或路径错误？
+
+```bash
+# 检查环境变量是否设置
+export LUNG_DATASET_DIR=/absolute/path/to/datasets
+python -c "from configs import validate_paths; validate_paths()"
+
+# 或检查 configs/dataset_config.py 中的默认路径是否与你的实际路径匹配
+```
+
+### Q3: Windows 上运行测试出现 `PermissionError: [WinError 5]`？
+
+这是 Windows 临时目录权限问题，与代码逻辑无关。不影响实际训练。
+解决方案：以管理员身份运行终端，或设置 `TMPDIR=C:\temp` 环境变量。
+
+### Q4: 为什么 GPU 服务器上 PyTorch 显示 `CUDA available: False`？
+
+**90%的原因是安装顺序错误**。如果先执行了 `pip install -r requirements.txt`，
+其中的 `torch>=2.0.0` 会安装 CPU 版本覆盖你之前装的 CUDA 版本。
+
+正确顺序：
+```bash
+pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+pip install -r requirements.txt
+```
+
+### Q5: SLURM 作业一直处于 `PENDING` 状态？
+
+```bash
+# 查看排队原因
+squeue -u $USER -o "%.18i %.9P %.8j %.8u %.2t %.10M %.6D %R"
+# %R 列显示原因：Resources (等待GPU), Priority (优先级低), QOSMaxCpuPerUserLimit (配额)
+
+# 如果是配额问题，先用 quick-test 模式验证脚本正确性
+sbatch --export=QUICK_TEST=1 scripts/submit_benchmark.sh
+```
+
+### Q6: 如何在不修改脚本的情况下调整实验参数？
+
+所有 submit 脚本都支持通过 `sbatch --export` 传入覆盖值：
+
+```bash
+sbatch --export=EPOCHS=10,BATCH_SIZE=16,LR=5e-5 scripts/submit_benchmark.sh
+```
+
+脚本内部使用 `${VAR:-default}` 语法，传入的值会覆盖默认值。
+
+### Q7: 如何恢复被中断的训练？
+
+```python
+from training.trainer import Trainer
+
+# 创建 trainer 后加载检查点
+trainer = Trainer(model, config, train_loader, val_loader)
+trainer.load_checkpoint('outputs/checkpoints/best_model.pth')
+trainer.fit()  # 从断点继续训练
+```
+
+---
+
 ## 训练监控
 
 ### TensorBoard
@@ -705,4 +873,4 @@ MIT License
 
 **最后更新**: 2026-04-29
 
-**版本**: v0.3.1
+**版本**: v0.4.0
