@@ -115,9 +115,9 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {
 
 ```bash
 # 创建数据目录
-mkdir -p data/raw/dataset1
-data/raw/dataset2
-data/raw/dataset3
+mkdir -p data/raw/dataset1 \
+         data/raw/dataset2 \
+         data/raw/dataset3
 
 # 上传数据集到服务器
 # 方法1: 使用scp
@@ -153,11 +153,11 @@ tmux new -s training
 # 激活环境
 source venv/bin/activate
 
-# 运行训练脚本
-python scripts/train.py \
-    --config configs/default.yaml \
-    --data_path data/raw \
-    --output_dir outputs/experiment_1
+# 运行基准实验
+python scripts/benchmark_experiment.py \
+    --epochs 50 \
+    --batch-size 32 \
+    --output-dir outputs/benchmark
 
 # 分离会话: Ctrl+B, 然后 D
 # 重新连接: tmux attach -t training
@@ -257,10 +257,10 @@ df -h
 
 - **项目文档**: 详见 `docs/` 目录
 - **问题反馈**: 在GitHub Issues中提交
-- **更新日志**: 详见 `CHANGELOG.md`
+- **更新日志**: 详见 `git log`
 
 ---
 
-**最后更新**: 2026-03-15
+**最后更新**: 2026-04-29
 
-**版本**: v0.1.0
+**版本**: v0.2.0

@@ -79,12 +79,6 @@ __all__ = [
     "analyze_model_complexity",
     "generate_complexity_table",
     "ModelComplexityAnalyzer",
-    # visualization
-    "GradCAMVisualizer",
-    "overlay_heatmap",
-    "AttentionVisualizer",
-    "visualize_attention",
-    "visualize_multihead_attention",
     # ablation
     "AblationStudy",
     "AblationConfig",
@@ -92,3 +86,13 @@ __all__ = [
     "get_ablation_config",
     "list_available_configs",
 ]
+
+# Visualization exports are optional (require grad-cam package)
+if "GradCAMVisualizer" in dir():
+    __all__.extend([
+        "GradCAMVisualizer",
+        "overlay_heatmap",
+        "AttentionVisualizer",
+        "visualize_attention",
+        "visualize_multihead_attention",
+    ])

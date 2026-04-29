@@ -30,7 +30,7 @@ from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
 from models import HybridModel
-from experiments.cross_validation import KFoldCrossValidator, compare_fold_results
+from experiments.cross_validation import KFoldCrossValidator
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_training_curves
 from scripts.utils import set_seed, get_device
@@ -154,26 +154,14 @@ def train_fold(
 
     training_time = time.time() - start_time
 
-    # 最终验证指标
-    val_metrics = {
-        'accuracy': best_val_acc,
-        'macro_f1': best_val_acc,  # 简化
-        'auc_roc': best_val_acc
-    }
-
-    return train_history, val_metrics, training_time
-
-
-def evaluate_fold(model: nn.Module, test_loader: DataLoader, device: torch.device) -> Dict:
-    """在测试集上评估"""
-
+    # 最终验证：在验证集上计算真实指标（非简化）
     model.eval()
     all_preds = []
     all_labels = []
     all_probs = []
 
     with torch.no_grad():
-        for images, labels in test_loader:
+        for images, labels in val_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             probs = torch.softmax(outputs, dim=1)
@@ -189,14 +177,13 @@ def evaluate_fold(model: nn.Module, test_loader: DataLoader, device: torch.devic
 
     metrics = compute_metrics(all_labels, all_preds, all_probs)
 
-    # 转换为字典格式
-    return {
+    val_metrics = {
         'accuracy': metrics.accuracy,
         'macro_f1': metrics.f1_macro,
         'auc_roc': metrics.auc_roc_ovr,
-        'precision': metrics.precision,
-        'recall': metrics.recall,
     }
+
+    return train_history, val_metrics, training_time
 
 
 # =============================================================================
@@ -224,28 +211,36 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
     # 准备数据
     print("\n[1/5] 加载数据集...")
     train_transform = get_train_augmentation(config.image_size)
+    val_transform = get_val_augmentation(config.image_size)
 
-    dataset = merge_datasets(
+    # 用于分层划分的数据集（只需标签，使用 val_transform 避免训练增强干扰）
+    dataset_for_split = merge_datasets(
+        config.dataset1_path,
+        config.dataset2_path,
+        config.dataset3_path,
+        transform=val_transform
+    )
+    # 用于训练的数据集（带训练增强）
+    dataset_train = merge_datasets(
         config.dataset1_path,
         config.dataset2_path,
         config.dataset3_path,
         transform=train_transform
     )
 
-    print(f"  合并数据集大小: {len(dataset)}")
+    print(f"  合并数据集大小: {len(dataset_for_split)}")
 
     device = get_device()
 
     # 创建K折验证器
     validator = KFoldCrossValidator(num_folds=config.n_folds, random_seed=config.seed)
 
-    # 创建所有折
-    all_folds = validator.create_folds(dataset)
+    # 创建所有折（基于 val_transform 数据集做分层）
+    all_folds = validator.create_folds(dataset_for_split)
 
     # 存储结果
     fold_results = []
     all_histories = []
-    test_metrics_per_fold = []
 
     print(f"\n[2/5] 开始 {config.n_folds} 折交叉验证...")
 
@@ -259,8 +254,9 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
 
         from torch.utils.data import Subset
 
-        train_subset = Subset(dataset, train_indices)
-        val_subset = Subset(dataset, val_indices)
+        # 训练子集使用 train_transform，验证子集使用 val_transform
+        train_subset = Subset(dataset_train, train_indices.tolist())
+        val_subset = Subset(dataset_for_split, val_indices.tolist())
 
         print(f"  训练集: {len(train_subset)}, 验证集: {len(val_subset)}")
 

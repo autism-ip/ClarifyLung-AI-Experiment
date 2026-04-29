@@ -10,7 +10,6 @@
 """
 
 import sys
-import os
 import json
 import time
 import argparse
@@ -19,26 +18,20 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
-import timm
+from torch.utils.data import DataLoader
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_recall_fscore_support
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
-from training.trainer import TrainingConfig, Trainer, get_optimizer
 from models import HybridModel
 from experiments.benchmark import create_resnet50, create_vit, create_hybrid_basic
-from experiments.benchmark import BenchmarkResult, generate_comparison_table, save_results
-from experiments.visualization import plot_model_comparison, plot_training_curves, plot_confusion_matrix
+from experiments.benchmark import generate_comparison_table, save_results
+from experiments.visualization import plot_model_comparison, plot_training_curves
 from experiments.metrics import compute_metrics
-from scripts.utils import set_seed, get_device
+from scripts.utils import set_seed, get_device, split_dataset_with_transforms, train_model
 
 
 # =============================================================================
@@ -116,90 +109,21 @@ def train_single_model(
     print(f"Training: {model_name}")
     print(f"{'='*60}")
 
-    model = model.to(device)
-    criterion = nn.CrossEntropyLoss()
+    save_path = None
+    if config.save_checkpoints:
+        save_path = str(Path(config.output_dir) / f"{model_name}_best.pth")
 
-    # 使用 Trainer 的 get_optimizer 实现差分学习率 (前缀匹配分组)
-    trainer_config = TrainingConfig(
+    return train_model(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=config.num_epochs,
+        device=device,
         learning_rate=config.learning_rate,
         transformer_lr=config.transformer_lr,
         weight_decay=config.weight_decay,
+        save_path=save_path,
     )
-    optimizer = get_optimizer(model, trainer_config)
-
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
-
-    # 训练循环
-    best_val_acc = 0.0
-    train_history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-
-    for epoch in range(config.num_epochs):
-        # 训练阶段
-        model.train()
-        train_loss = 0.0
-        train_correct = 0
-        train_total = 0
-
-        for batch_idx, (images, labels) in enumerate(train_loader):
-            images, labels = images.to(device), labels.to(device)
-
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-            _, predicted = outputs.max(1)
-            train_total += labels.size(0)
-            train_correct += predicted.eq(labels).sum().item()
-
-        train_loss /= len(train_loader)
-        train_acc = train_correct / train_total
-
-        # 验证阶段
-        model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
-
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-
-                val_loss += loss.item()
-                _, predicted = outputs.max(1)
-                val_total += labels.size(0)
-                val_correct += predicted.eq(labels).sum().item()
-
-        val_loss /= len(val_loader)
-        val_acc = val_correct / val_total
-
-        scheduler.step()
-
-        train_history['train_loss'].append(train_loss)
-        train_history['train_acc'].append(train_acc)
-        train_history['val_loss'].append(val_loss)
-        train_history['val_acc'].append(val_acc)
-
-        # 保存最佳模型
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            if config.save_checkpoints:
-                checkpoint_path = Path(config.output_dir) / f"{model_name}_best.pth"
-                torch.save(model.state_dict(), checkpoint_path)
-
-        if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1}/{config.num_epochs} | "
-                  f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f} | "
-                  f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}")
-
-    return {
-        'train_history': train_history,
-        'best_val_acc': best_val_acc
-    }
 
 
 def evaluate_model(
@@ -265,24 +189,16 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
     train_transform = get_train_augmentation(config.image_size)
     val_transform = get_val_augmentation(config.image_size)
 
-    dataset = merge_datasets(
+    train_dataset, val_dataset, test_dataset = split_dataset_with_transforms(
         config.dataset1_path,
         config.dataset2_path,
         config.dataset3_path,
-        transform=train_transform
-    )
-
-    print(f"  合并数据集大小: {len(dataset)}")
-
-    # 划分数据集
-    total_size = len(dataset)
-    train_size = int(config.train_ratio * total_size)
-    val_size = int(config.val_ratio * total_size)
-    test_size = total_size - train_size - val_size
-
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset, [train_size, val_size, test_size],
-        generator=torch.Generator().manual_seed(config.seed)
+        train_transform=train_transform,
+        val_transform=val_transform,
+        train_ratio=config.train_ratio,
+        val_ratio=config.val_ratio,
+        test_ratio=config.test_ratio,
+        seed=config.seed,
     )
 
     print(f"  训练集: {len(train_dataset)}")

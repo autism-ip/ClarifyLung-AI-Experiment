@@ -25,20 +25,18 @@ from typing import Dict, List, Callable
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
 from models import ConfigurableHybrid
-from experiments.ablation import AblationStudy, ABLATION_CONFIGS, AblationConfig
+from experiments.ablation import AblationConfig
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_model_comparison
-from scripts.utils import set_seed, get_device
+from scripts.utils import set_seed, get_device, split_dataset_with_transforms, train_model
 
 
 # =============================================================================
@@ -79,46 +77,8 @@ class AblationExperimentConfig:
 
 
 # =============================================================================
-# 训练和评估函数
+# 评估函数
 # =============================================================================
-
-def train_model_fn(
-    model: nn.Module,
-    train_loader: DataLoader,
-    epochs: int,
-    device: torch.device,
-    learning_rate: float = 1e-4,
-    transformer_lr: float = 5e-4,
-    weight_decay: float = 0.01
-):
-    """训练函数"""
-
-    model = model.to(device)
-    criterion = nn.CrossEntropyLoss()
-
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0.0
-
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-
-        scheduler.step()
-
-        if (epoch + 1) % 5 == 0:
-            print(f"    Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(train_loader):.4f}")
-
 
 def evaluate_model_fn(
     model: nn.Module,
@@ -183,25 +143,18 @@ def run_ablation_experiment(config: AblationExperimentConfig):
     # 准备数据
     print("\n[1/4] 加载数据集...")
     train_transform = get_train_augmentation(config.image_size)
+    val_transform = get_val_augmentation(config.image_size)
 
-    dataset = merge_datasets(
+    train_dataset, val_dataset, test_dataset = split_dataset_with_transforms(
         config.dataset1_path,
         config.dataset2_path,
         config.dataset3_path,
-        transform=train_transform
-    )
-
-    print(f"  合并数据集大小: {len(dataset)}")
-
-    # 划分数据集
-    total_size = len(dataset)
-    train_size = int(config.train_ratio * total_size)
-    val_size = int(config.val_ratio * total_size)
-    test_size = total_size - train_size - val_size
-
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset, [train_size, val_size, test_size],
-        generator=torch.Generator().manual_seed(config.seed)
+        train_transform=train_transform,
+        val_transform=val_transform,
+        train_ratio=config.train_ratio,
+        val_ratio=config.val_ratio,
+        test_ratio=config.test_ratio,
+        seed=config.seed,
     )
 
     print(f"  训练集: {len(train_dataset)}")
@@ -285,9 +238,15 @@ def run_ablation_experiment(config: AblationExperimentConfig):
         )
 
         # 训练
-        train_model_fn(
-            model, train_loader, config.num_epochs, device,
-            config.learning_rate, config.transformer_lr, config.weight_decay
+        train_model(
+            model=model,
+            train_loader=train_loader,
+            val_loader=None,
+            epochs=config.num_epochs,
+            device=device,
+            learning_rate=config.learning_rate,
+            transformer_lr=config.transformer_lr,
+            weight_decay=config.weight_decay,
         )
 
         # 评估

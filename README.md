@@ -28,7 +28,6 @@ ClarifyLung-AI-Experiment/
 │   ├── __init__.py
 │   ├── custom_dataset.py            # 三数据集统一加载器 (核心)
 │   ├── augmentation.py              # 数据增强 (CutMix/MixUp/RandomErasing)
-│   ├── dataset.py                   # 基础数据集类
 │   ├── visualization.py             # 数据可视化
 │   └── CLAUDE.md
 ├── models/                          # 模型架构模块

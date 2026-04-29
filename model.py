@@ -9,6 +9,5 @@ import torch
 from models.hybrid_model import HybridModel, CLASS_NAMES
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-hybrid_model = HybridModel().to(device)
 
-__all__ = ['HybridModel', 'CLASS_NAMES', 'device', 'hybrid_model']
+__all__ = ['HybridModel', 'CLASS_NAMES', 'device']
