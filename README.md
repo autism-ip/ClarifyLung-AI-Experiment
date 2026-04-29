@@ -614,24 +614,233 @@ sbatch scripts/submit_crossval.sh
 
 ---
 
-### 实验五：可解释性分析
+### 实验五：可视化生成流程
+
+本项目提供 **7 种可视化类型**，覆盖训练过程监控、模型对比、可解释性分析全流程。
+所有可视化在无头服务器（SLURM集群）上均可正常生成，后端已强制使用 `Agg`。
+
+#### 自动生成的可视化（实验脚本运行时自动产出）
+
+| 实验脚本 | 自动生成的图表 | 输出路径 | 说明 |
+|---------|--------------|---------|------|
+| `benchmark_experiment.py` | 模型对比柱状图 | `outputs/benchmark/model_comparison.png` | 各模型 accuracy/f1 对比 |
+| `benchmark_experiment.py` | 训练曲线 | `outputs/benchmark/training_curves.png` | 各模型 loss/acc 曲线 |
+| `cross_validation_experiment.py` | 交叉验证训练曲线 | `outputs/cross_validation/cross_validation_curves.png` | 各折平均 loss/acc |
+
+#### 手动调用的可视化（独立代码片段）
+
+**1. 训练曲线（Training Curves）**
+
+```python
+from experiments.visualization import plot_training_curves
+
+metrics = {
+    "train_loss": [1.0, 0.8, 0.6, 0.5, 0.4],
+    "val_loss": [1.1, 0.9, 0.75, 0.65, 0.55],
+    "train_acc": [0.5, 0.65, 0.78, 0.85, 0.90],
+    "val_acc": [0.45, 0.60, 0.72, 0.80, 0.85],
+}
+fig = plot_training_curves(metrics, save_path="outputs/figures/training_curves.png")
+```
+
+**2. 混淆矩阵（Confusion Matrix）**
+
+```python
+from experiments.visualization import plot_confusion_matrix
+import numpy as np
+
+y_true = np.array([0,0,0,1,1,1,2,2,2])
+y_pred = np.array([0,0,1,1,1,2,2,2,2])
+fig = plot_confusion_matrix(
+    y_true, y_pred,
+    class_names=["normal", "benign", "malignant"],
+    normalize=True,
+    save_path="outputs/figures/confusion_matrix.png"
+)
+```
+
+**3. 类别分布图（Class Distribution）**
+
+```python
+from experiments.visualization import plot_class_distribution, plot_pie_chart
+
+# 柱状图：展示各数据集的类别分布
+distribution = {
+    "IQ-OTHNCCD": {0: 1208, 1: 1200, 2: 1201},
+    "LungColon": {0: 5000, 1: 5000, 2: 5000},
+    "Lung4Types": {0: 3000, 1: 3000, 2: 3000},
+}
+fig = plot_class_distribution(
+    distribution,
+    class_names=["normal", "benign", "malignant"],
+    save_path="outputs/figures/class_distribution.png"
+)
+
+# 饼图：单数据集类别占比
+fig = plot_pie_chart(
+    {0: 1208, 1: 1200, 2: 1201},
+    class_names=["normal", "benign", "malignant"],
+    save_path="outputs/figures/class_pie_chart.png"
+)
+```
+
+**4. 模型对比图（Model Comparison）**
+
+```python
+from experiments.visualization import plot_model_comparison
+
+results = {
+    "ResNet50": {"accuracy": 0.82, "macro_f1": 0.80},
+    "ViT": {"accuracy": 0.85, "macro_f1": 0.83},
+    "Hybrid": {"accuracy": 0.91, "macro_f1": 0.90},
+}
+fig = plot_model_comparison(
+    results,
+    metrics=["accuracy", "macro_f1"],
+    save_path="outputs/figures/model_comparison.png"
+)
+```
+
+**5. Grad-CAM 热力图（CNN可解释性）**
+
+```python
+from experiments.visualization import GradCAMVisualizer
+import torch
+
+# 加载模型并切换到评估模式
+model = HybridModel(num_classes=3)
+model.load_state_dict(torch.load("outputs/checkpoints/best_model.pth"))
+model.eval()
+
+# 准备单张输入图像 (1, 3, 224, 224)
+input_tensor = torch.randn(1, 3, 224, 224)
+
+# 生成目标类别的热力图
+visualizer = GradCAMVisualizer(model)
+heatmap = visualizer.generate_heatmap(input_tensor, target_class=2)
+
+# 叠加到原图
+from experiments.visualization import overlay_heatmap
+overlay_img = overlay_heatmap(input_tensor, heatmap, alpha=0.5)
+
+# 保存
+import cv2
+cv2.imwrite("outputs/figures/gradcam_malignant.png", overlay_img)
+```
+
+**6. Transformer 注意力图**
+
+```python
+from experiments.visualization import AttentionVisualizer
+
+visualizer = AttentionVisualizer(model)
+
+# 检查模型是否包含注意力层
+if visualizer.has_attention():
+    attention_weights = visualizer.extract_attention(input_tensor)
+    fig = visualizer.visualize_attention(
+        attention_weights[0],
+        save_path="outputs/figures/attention_map.png"
+    )
+```
+
+#### 可视化完整工作流示例
+
+```bash
+# Step 1: 运行基准实验（自动生成对比图和训练曲线）
+python scripts/benchmark_experiment.py --epochs 50 --output-dir outputs/benchmark
+
+# Step 2: 运行交叉验证（自动生成平均训练曲线）
+python scripts/cross_validation_experiment.py --folds 5 --output-dir outputs/cross_validation
+
+# Step 3: 生成混淆矩阵（加载最佳模型在测试集上推理后）
+python -c "
+from experiments.visualization import plot_confusion_matrix
+import numpy as np
+# 替换为实际推理结果
+y_true = np.load('outputs/benchmark/y_true.npy')
+y_pred = np.load('outputs/benchmark/y_pred.npy')
+plot_confusion_matrix(y_true, y_pred, class_names=['normal','benign','malignant'],
+                      save_path='outputs/figures/final_confusion_matrix.png')
+"
+
+# Step 4: 查看所有图表
+ls outputs/benchmark/*.png outputs/cross_validation/*.png outputs/figures/*.png
+```
+
+#### 常见问题
+
+**Q: SLURM 集群上图表生成失败？**
+
+已在 `experiments/visualization/__init__.py` 顶部强制设置 `matplotlib.use('Agg')`，
+无需 DISPLAY 环境即可保存图片。如果仍报错，检查 `matplotlib` 版本：
+
+```bash
+python -c "import matplotlib; print(matplotlib.__version__)"  # 应 >=3.7.0
+```
+
+**Q: 如何调整图表尺寸/DPI？**
+
+所有 `plot_*` 函数返回 `matplotlib.figure.Figure` 对象，可在保存前调整：
+
+```python
+fig = plot_training_curves(metrics)
+fig.set_size_inches(16, 9)
+fig.savefig("outputs/figures/high_res.png", dpi=300)
+```
+
+---
+
+### 实验六：可解释性分析
 
 **相关文件**：
 - `experiments/visualization/gradcam.py` — Grad-CAM热力图
 - `experiments/visualization/attention_maps.py` — 注意力图
 
-**使用示例**：
+**完整工作流**：
 
 ```python
-from experiments.visualization.gradcam import GradCAMVisualizer
+import torch
+from model import HybridModel
+from experiments.visualization import GradCAMVisualizer, AttentionVisualizer, overlay_heatmap
+from torchvision import transforms
+from PIL import Image
 
-visualizer = GradCAMVisualizer(model)
-heatmap = visualizer.generate_heatmap(input_tensor, target_class=2)
+# 1. 加载训练好的模型
+model = HybridModel(num_classes=3)
+model.load_state_dict(torch.load("outputs/checkpoints/best_model.pth", map_location="cpu"))
+model.eval()
+
+# 2. 加载并预处理单张图像
+img_path = "datasets/IQ-OTHNCCD/Normal cases/normal_001.png"
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+img_tensor = transform(Image.open(img_path).convert("RGB")).unsqueeze(0)
+
+# 3. Grad-CAM：查看CNN关注的区域
+gcam = GradCAMVisualizer(model)
+heatmap = gcam.generate_heatmap(img_tensor, target_class=0)  # target_class=0 为 normal
+overlay = overlay_heatmap(img_tensor, heatmap, alpha=0.5)
+# overlay 为 numpy uint8 数组，可用 cv2.imwrite 保存
+
+# 4. Attention Map：查看Transformer关注的token
+attn = AttentionVisualizer(model)
+if attn.has_attention():
+    weights = attn.extract_attention(img_tensor)
+    fig = attn.visualize_attention(weights[0], save_path="outputs/figures/attention.png")
 ```
+
+**关键参数说明**：
+- `target_class`: 目标类别索引 (0=normal, 1=benign, 2=malignant)
+- `alpha`: 热力图叠加透明度 (0.0-1.0)
+- `weights[0]`: 取第一层注意力头的权重
 
 ---
 
-### 实验六：模型复杂度评估
+### 实验七：模型复杂度评估
 
 **相关文件**：
 - `experiments/complexity.py` — ModelComplexityAnalyzer
