@@ -8,6 +8,10 @@
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+# 强制使用非交互式后端，确保在无头服务器/SLURM集群上正常生成图表
+import matplotlib
+matplotlib.use('Agg')
+
 # Optional imports - grad-cam package may not be installed
 try:
     from .gradcam import GradCAMVisualizer, overlay_heatmap

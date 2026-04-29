@@ -428,10 +428,15 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
 
     print(f"  报告已保存: {report_path}")
 
-    # 绘制训练曲线
+    # 绘制训练曲线（各折平均）
     combined_history = {}
-    for h in all_histories:
-        combined_history.update(h)
+    if all_histories:
+        for key in all_histories[0].keys():
+            min_len = min(len(h[key]) for h in all_histories)
+            combined_history[key] = [
+                sum(h[key][i] for h in all_histories) / len(all_histories)
+                for i in range(min_len)
+            ]
 
     fig = plot_training_curves(
         metrics_dict=combined_history,
