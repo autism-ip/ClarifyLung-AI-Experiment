@@ -282,12 +282,18 @@ class HybridAdvanced(nn.Module):
 
 def create_hybrid_advanced(num_classes: int = 3) -> nn.Module:
     """
-    创建完整版混合模型
+    创建完整版混合模型 (已统一指向 models.HybridModel)
 
     Args:
         num_classes: 输出类别数，默认3
 
     Returns:
-        HybridAdvanced 模型实例
+        HybridModel 实例
     """
-    return HybridAdvanced(num_classes=num_classes)
+    import sys
+    from pathlib import Path
+    project_root = str(Path(__file__).parent.parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from models.hybrid_model import HybridModel
+    return HybridModel(num_classes=num_classes)

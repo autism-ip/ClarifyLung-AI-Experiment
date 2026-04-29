@@ -1,6 +1,6 @@
 """
 experiments/ - 实验模块
-> L1 | 父级: ../CLAUDE.md
+> L2 | 父级: ../CLAUDE.md
 
 成员清单
 benchmark/         : 基准模型与对比实验

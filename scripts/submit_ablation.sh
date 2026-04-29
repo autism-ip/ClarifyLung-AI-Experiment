@@ -54,7 +54,8 @@ fi
 # 实验配置 (修改此处参数)
 # =============================================================================
 # 快速测试模式 (调试/排队测试): 设置 QUICK_TEST=1
-QUICK_TEST=0
+# 支持 sbatch --export=QUICK_TEST=1 覆盖
+QUICK_TEST=${QUICK_TEST:-0}
 EPOCHS=30
 BATCH_SIZE=32
 LR=1e-4

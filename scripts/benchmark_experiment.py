@@ -220,11 +220,8 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
         config.num_workers = 0
         config.save_checkpoints = False
         config.save_plots = False
-        models_to_compare_quick = [
-            ('hybrid_advanced', 'Hybrid-Advanced', False),
-        ]
     else:
-        models_to_compare_quick = None
+        pass
 
     # 创建数据加载器
     train_loader = DataLoader(

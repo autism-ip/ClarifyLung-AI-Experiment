@@ -7,6 +7,7 @@
 - **架构**: CNN-Transformer混合模型 (ResNet50 + Transformer)
 - **任务**: 3分类 (normal=0, benign=1, malignant=2)
 - **数据集**: 3个肺癌X光数据集统一整合
+- **运行模式**: 本地CLI + 远程SLURM批作业双模式
 
 ---
 
@@ -27,6 +28,7 @@
 - **Python**: 3.10+
 - **CUDA**: 11.8+ (如使用GPU)
 - **cuDNN**: 8.6+ (如使用GPU)
+- **SLURM**: 如使用集群批作业提交
 
 ---
 
@@ -49,13 +51,6 @@ sudo apt-get install -y \
     htop \
     tmux \
     unzip
-
-# 安装Python开发环境
-sudo apt-get install -y \
-    python3.10 \
-    python3.10-dev \
-    python3.10-venv \
-    python3-pip
 ```
 
 ### 2. 安装CUDA (GPU服务器)
@@ -82,76 +77,173 @@ nvidia-smi
 mkdir -p /workspace/projects
 cd /workspace/projects
 
-# 2. 克隆项目 (假设已上传到GitHub)
-# git clone https://github.com/your-username/lung-cancer-classification.git
-# cd lung-cancer-classification
+# 2. 克隆项目
+git clone <your-repo-url> /workspace/lung-cancer-classification
+cd /workspace/lung-cancer-classification
 
-# 或者: 上传项目压缩包并解压
-# unzip lung-cancer-classification.zip -d lung-cancer-classification/
-# cd lung-cancer-classification
-
-# 3. 创建虚拟环境
-python3.10 -m venv venv
-source venv/bin/activate
+# 3. 创建conda环境（脚本优先检测conda，venv为回退）
+conda create -n lung_cancer python=3.10 -y
+conda activate lung_cancer
 
 # 4. 升级pip
 pip install --upgrade pip setuptools wheel
 
-# 5. 安装依赖 (根据CUDA版本选择)
+# 5. 安装PyTorch (GPU版本，必须显式指定CUDA索引)
 # CUDA 11.8:
 pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 
 # CPU版本 (无GPU):
 # pip install torch==2.0.1+cpu torchvision==0.15.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 
-# 6. 安装其他依赖
+# 6. 安装其余依赖
 pip install -r requirements.txt
 
-# 7. 验证安装
-python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+# 7. 验证GPU可用性
+python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
 ```
+
+> **重要**: GPU服务器必须先安装CUDA版PyTorch，再执行 `pip install -r requirements.txt`。
+> 如果顺序颠倒，`requirements.txt` 中的 `torch>=2.0.0` 可能会安装CPU版本。
 
 ### 4. 数据准备
 
+**方式A（推荐）: 环境变量驱动**
+
 ```bash
-# 创建数据目录
-mkdir -p data/raw/dataset1 \
-         data/raw/dataset2 \
-         data/raw/dataset3
+# 设置数据集根目录，零代码修改
+export LUNG_DATASET_DIR=/path/to/your/datasets
 
-# 上传数据集到服务器
-# 方法1: 使用scp
-# scp -r /local/path/to/dataset1 user@server:/workspace/projects/lung-cancer-classification/data/raw/
-
-# 方法2: 使用rsync
-# rsync -avz --progress /local/path/to/dataset1 user@server:/workspace/projects/lung-cancer-classification/data/raw/
-
-# 方法3: 直接下载 (如果数据在云端)
-# wget https://your-data-source.com/dataset1.zip
-# unzip dataset1.zip -d data/raw/dataset1/
+# 数据集目录结构应如下:
+# /path/to/your/datasets/
+# ├── IQ-OTHNCCD/
+# │   └── Augmented IQ-OTHNCCD lung cancer dataset/
+# │       ├── Normal cases/
+# │       ├── Malignant cases/
+# │       └── Benign cases/
+# ├── LungColon/
+# │   └── lung_colon_image_set/
+# │       └── lung_image_sets/
+# │           ├── lung_n/
+# │           ├── lung_aca/
+# │           └── lung_scc/
+# └── Lung4Types/
+#     └── Data/
+#         ├── train/
+#         ├── valid/
+#         └── test/
 ```
 
-### 5. 运行测试
+**方式B: 放置到项目本地 `datasets/` 目录**
+
+```bash
+mkdir -p datasets/
+# 将三个数据集复制到 datasets/IQ-OTHNCCD, datasets/LungColon, datasets/Lung4Types
+```
+
+**方式C: Kaggle自动下载**
+
+```bash
+# 配置Kaggle凭证 ~/.kaggle/kaggle.json
+python scripts/download_datasets.py
+```
+
+**验证数据路径:**
+
+```bash
+python -c "from configs import validate_paths; validate_paths()"
+```
+
+### 5. 环境验证
 
 ```bash
 # 激活环境
-source venv/bin/activate
+conda activate lung_cancer
 
-# 运行测试
+# 运行核心测试
 python -m pytest tests/ -v
 
-# 或者只运行快速测试
-python -m pytest tests/test_model_forward.py -v
+# 运行实验模块测试
+python -m pytest experiments/tests/ -v
+
+# 快速流水线验证
+python scripts/validate_pipeline.py
 ```
 
-### 6. 开始训练
+---
+
+## SLURM 批作业提交
+
+### 前置配置
+
+编辑对应的 `scripts/submit_*.sh` 文件，根据集群环境调整：
 
 ```bash
-# 使用tmux/screen保持会话 (推荐)
+# =============================================================================
+# 环境配置（根据实际集群调整）
+# =============================================================================
+# module load anaconda/2024.01    # 加载conda模块（如需要）
+# module load cuda/11.8           # 加载CUDA模块（如需要）
+
+# 数据集根目录（零代码修改部署）
+export LUNG_DATASET_DIR=/path/to/your/datasets
+```
+
+### 快速自检（提交全量前必做）
+
+```bash
+# 200样本，1epoch，秒级验证环境/数据/GPU
+sbatch --export=QUICK_TEST=1 scripts/submit_benchmark.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_ablation.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_crossval.sh
+
+# 查看日志确认成功
+tail -f outputs/slurm/benchmark_*.out
+tail -f outputs/slurm/ablation_*.out
+tail -f outputs/slurm/crossval_*.out
+```
+
+> 脚本使用 `${QUICK_TEST:-0}` 读取环境变量，支持 `sbatch --export=QUICK_TEST=1` 覆盖，
+> 无需修改脚本内部变量。
+
+### 提交全量实验
+
+```bash
+# 三个实验互相独立，可同时提交
+sbatch scripts/submit_benchmark.sh      # 24h
+sbatch scripts/submit_ablation.sh       # 48h
+sbatch scripts/submit_crossval.sh       # 72h
+```
+
+### 作业监控
+
+```bash
+# 查看作业队列
+squeue -u $USER
+
+# 查看作业详情
+scontrol show job <job_id>
+
+# 实时查看输出
+tail -f outputs/slurm/benchmark_<job_id>.out
+tail -f outputs/slurm/benchmark_<job_id>.err
+
+# 取消作业
+scancel <job_id>
+```
+
+---
+
+## 单机直接运行（非SLURM环境）
+
+```bash
+# 使用tmux/screen保持会话
 tmux new -s training
 
 # 激活环境
-source venv/bin/activate
+conda activate lung_cancer
+
+# 设置数据集路径
+export LUNG_DATASET_DIR=/path/to/your/datasets
 
 # 运行基准实验
 python scripts/benchmark_experiment.py \
@@ -205,34 +297,24 @@ df -h
 
 ## 故障排查
 
-### 常见问题
-
-#### 1. CUDA out of memory
+### 1. CUDA out of memory
 
 ```bash
 # 解决方案1: 减小batch_size
-# 在TrainingConfig中设置 batch_size=16 或 8
+python scripts/benchmark_experiment.py --batch-size 16
 
-# 解决方案2: 使用梯度累积
-# 在trainer.py中启用gradient_accumulation_steps
-
-# 解决方案3: 使用更小的模型
-# model_dim=128, num_layers=2
+# 解决方案2: 使用更小的模型配置
+# 在脚本中修改 model_dim=128, num_layers=2
 ```
 
-#### 2. 数据加载慢
+### 2. 数据加载慢
 
 ```bash
-# 解决方案1: 增加num_workers
-# DataLoader(num_workers=8)
-
-# 解决方案2: 使用pin_memory
-# DataLoader(pin_memory=True)
-
-# 解决方案3: 预处理数据并保存为numpy/torch格式
+# 增加num_workers
+# 在脚本中修改 num_workers=8
 ```
 
-#### 3. 训练不收敛
+### 3. 训练不收敛
 
 ```bash
 # 检查点:
@@ -240,6 +322,19 @@ df -h
 # 2. 数据预处理是否正确 (归一化)
 # 3. 标签是否正确映射
 # 4. 损失函数是否合适
+```
+
+### 4. SLURM作业失败
+
+```bash
+# 查看错误日志
+cat outputs/slurm/<job_name>_<job_id>.err
+
+# 常见原因:
+# - 虚拟环境未正确激活
+# - 数据集路径不存在
+# - CUDA版本与PyTorch不匹配
+# - 内存/显存不足
 ```
 
 ---
@@ -263,4 +358,4 @@ df -h
 
 **最后更新**: 2026-04-29
 
-**版本**: v0.2.0
+**版本**: v0.3.1

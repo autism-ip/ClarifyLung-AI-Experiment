@@ -583,7 +583,11 @@ class Trainer:
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         # weights_only=False: 需要恢复完整对象(optimizer/rng state等)
         # 仅加载来自可信来源的检查点
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        except TypeError:
+            # PyTorch < 2.0 不支持 weights_only 参数
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

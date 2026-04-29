@@ -12,7 +12,6 @@ Python + PyTorch + torchvision + timm + albumentations
 科训/
 ├── data/              # 数据管理模块
 │   ├── __init__.py
-│   ├── dataset.py           # 基础数据集类
 │   ├── custom_dataset.py    # 三数据集统一加载 (IQ-OTHNCCD + LungColon + Lung4Types)
 │   ├── augmentation.py      # 数据增强 (CutMix/MixUp/RandomErasing)
 │   └── visualization.py     # 数据可视化
@@ -60,7 +59,11 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── cross_validation_experiment.py # 交叉验证实验CLI
 │   ├── baseline_experiment.py     # 小规模快速验证脚本
 │   ├── validate_pipeline.py       # 3步流水线烟雾测试
-│   ├── utils.py                   # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model)
+│   ├── utils.py                   # 实验脚本公共工具
+│   │                              #   - set_seed, get_device
+│   │                              #   - split_dataset_with_transforms (防数据泄漏划分)
+│   │                              #   - train_model (通用训练循环 + AMP + 差分LR)
+│   │                              #   - create_quick_test_datasets (200样本快速子集)
 │   ├── submit_benchmark.sh        # SLURM: 基准实验提交
 │   ├── submit_ablation.sh         # SLURM: 消融实验提交
 │   └── submit_crossval.sh         # SLURM: 交叉验证提交
@@ -340,7 +343,7 @@ from model import HybridModel
 | `scripts/benchmark_experiment.py` | 基准对比实验CLI |
 | `scripts/ablation_experiment.py` | 消融实验CLI |
 | `scripts/cross_validation_experiment.py` | 交叉验证CLI |
-| `scripts/utils.py` | 实验脚本公共工具 (set_seed/get_device) |
+| `scripts/utils.py` | 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model, create_quick_test_datasets) |
 | `scripts/submit_benchmark.sh` | SLURM: 基准实验提交 |
 | `scripts/submit_ablation.sh` | SLURM: 消融实验提交 |
 | `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |

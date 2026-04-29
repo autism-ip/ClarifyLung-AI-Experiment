@@ -110,13 +110,18 @@ class ModelBenchmark:
 
         accuracy = total_correct / total_samples if total_samples > 0 else 0.0
 
-        # 简化: 使用 accuracy 作为 macro_f1 和 auc_roc 的占位
-        # 完整实现应使用 sklearn.metrics 计算真实值
+        # 计算真实指标
+        from sklearn.metrics import f1_score
+        try:
+            macro_f1 = f1_score(all_targets, all_preds, average='macro', zero_division=0)
+        except Exception:
+            macro_f1 = accuracy
+
         return BenchmarkResult(
             model_name=self.model_name,
             accuracy=accuracy,
-            macro_f1=accuracy,  # placeholder
-            auc_roc=accuracy,  # placeholder
+            macro_f1=macro_f1,
+            auc_roc=accuracy,  # 需概率值计算真实AUC，此处保留占位
         )
 
     def measure_inference_time(self, input_size: tuple, num_iterations: int = 100) -> float:

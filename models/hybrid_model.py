@@ -16,7 +16,7 @@ from .components.cross_attention import CrossAttention
 from .components.classification import ClassificationHead
 
 
-CLASS_NAMES = ["normal", "malignant", "benign"]
+CLASS_NAMES = ["normal", "benign", "malignant"]
 
 
 def _get_layer_channels(backbone):

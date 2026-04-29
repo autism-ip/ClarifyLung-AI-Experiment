@@ -469,7 +469,7 @@ def main():
     # 输出配置
     parser.add_argument('--output-dir', type=str, default='outputs/cross_validation', help='输出目录')
     parser.add_argument('--no-checkpoint', action='store_true', help='不保存模型权重')
-    parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 1fold, 1epoch')
+    parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 3 folds, 1epoch')
 
     args = parser.parse_args()
 

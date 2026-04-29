@@ -95,7 +95,7 @@ ClarifyLung-AI-Experiment/
 │   ├── submit_benchmark.sh          # SLURM: 基准实验提交
 │   ├── submit_ablation.sh           # SLURM: 消融实验提交
 │   ├── submit_crossval.sh           # SLURM: 交叉验证提交
-│   ├── utils.py                     # 实验脚本公共工具
+│   ├── utils.py                     # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model, create_quick_test_datasets)
 │   └── CLAUDE.md
 ├── tests/                           # 单元测试模块
 │   ├── test_dataset_loading.py      # 数据集加载测试
@@ -217,31 +217,27 @@ python scripts/download_datasets.py
 ```python
 from model import HybridModel
 from training.trainer import Trainer, TrainingConfig
-from data.custom_dataset import merge_datasets
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
-from torch.utils.data import DataLoader, random_split
+from scripts.utils import split_dataset_with_transforms
+from torch.utils.data import DataLoader
 
 # 1. 创建模型
 model = HybridModel(num_classes=3, model_dim=256, nhead=8, num_layers=4, dropout=0.1)
 
-# 2. 加载数据
+# 2. 加载数据 (防泄漏划分：train/val/test 各自使用正确的 transform)
 train_transform = get_train_augmentation(224)
 val_transform = get_val_augmentation(224)
-dataset = merge_datasets(
+train_ds, val_ds, test_ds = split_dataset_with_transforms(
     DATASET_PATHS['dataset1'],
     DATASET_PATHS['dataset2'],
     DATASET_PATHS['dataset3'],
-    transform=train_transform
-)
-
-# 划分数据集
-train_size = int(0.7 * len(dataset))
-val_size = int(0.15 * len(dataset))
-test_size = len(dataset) - train_size - val_size
-train_ds, val_ds, test_ds = random_split(
-    dataset, [train_size, val_size, test_size],
-    generator=torch.Generator().manual_seed(42)
+    train_transform=train_transform,
+    val_transform=val_transform,
+    train_ratio=0.7,
+    val_ratio=0.15,
+    test_ratio=0.15,
+    seed=42,
 )
 
 train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4)
@@ -327,6 +323,7 @@ python scripts/cross_validation_experiment.py \
 | `--no-checkpoint` | 不保存模型权重 | False | 全部 |
 | `--no-plot` | 不生成图表 | False | benchmark |
 | `--folds` | K折数 | 5 | crossval |
+| `--quick-test` | 快速测试模式 (200样本, 1epoch) | False | 全部 |
 
 ### 方式三：远程服务器 SLURM 批作业提交
 
@@ -397,15 +394,18 @@ tail -f outputs/slurm/benchmark_<job_id>.out   # 实时查看输出
 scancel <job_id>                   # 取消作业
 ```
 
-#### SLURM 快速调试模式
+#### SLURM 快速自检模式
 
-所有 SLURM 脚本支持快速调试模式，修改顶部变量即可：
+提交全量实验前，先用快速模式验证环境/数据/GPU：
 
 ```bash
-# 快速测试模式（调试时用）
-EPOCHS=2
-BATCH_SIZE=4
+sbatch --export=QUICK_TEST=1 scripts/submit_benchmark.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_ablation.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_crossval.sh
 ```
+
+> 脚本内部使用 `${QUICK_TEST:-0}`，优先读取 `sbatch --export` 传入的环境变量，
+> 无需修改脚本文件即可切换模式。
 
 ---
 
@@ -506,15 +506,18 @@ python scripts/ablation_experiment.py \
 sbatch scripts/submit_ablation.sh
 ```
 
-**消融配置**：
+**消融配置**（渐进式叠加，5种配置）：
 
 | Config | multi_scale | gate | transformer | cross_attention | 描述 |
 |--------|-------------|------|-------------|-----------------|------|
-| baseline_cnn | - | - | - | - | 仅CNN |
-| multiscale_only | + | - | - | - | 多尺度特征 |
-| gating_added | + | SE | - | - | +门控 |
+| baseline_cnn | - | - | - | - | 仅CNN基线 |
+| multiscale_only | + | - | - | - | +多尺度特征 |
+| gating_added | + | SE | - | - | +SE门控 |
 | transformer_added | + | SE | + | - | +Transformer |
-| full_hybrid | + | SE | + | + | 完整架构 |
+| full_hybrid | + | SE | + | + | +交叉注意力 |
+
+> 另见 `experiments/ablation/configs.py` 中定义的 `ABLATION_CONFIGS`（6种组件移除式配置），
+> 可用于独立分析各组件贡献度。
 
 **预期输出**：
 - `outputs/ablation/ablation_results.json` — 详细结果
@@ -655,19 +658,32 @@ tail -f outputs/slurm/benchmark_<job_id>.out
 快速部署：
 
 ```bash
-# 在远程服务器上
-git clone <your-repo>
-ClarifyLung-AI-Experiment/
+# 1. 在远程服务器上克隆项目
+git clone <your-repo-url> /workspace/lung-cancer-classification
+cd /workspace/lung-cancer-classification
+
+# 2. 创建 conda 环境并安装依赖
+conda create -n lung_cancer python=3.10 -y
+conda activate lung_cancer
+
+# GPU服务器必须先装 CUDA 版 PyTorch，再装 requirements.txt
+pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements.txt
 
-# 设置数据集路径
+# 3. 设置数据集路径
 export LUNG_DATASET_DIR=/path/to/your/datasets
 
-# 运行测试验证环境
+# 4. 运行测试验证环境
 python -m pytest tests/ -v
+python -m pytest experiments/tests/ -v
 
-# 提交实验作业
-sbatch scripts/submit_benchmark.sh
+# 5. 快速自检（200样本, 1epoch, 秒级验证环境/数据/GPU）
+sbatch --export=QUICK_TEST=1 scripts/submit_benchmark.sh
+
+# 6. 提交全量实验作业
+sbatch scripts/submit_benchmark.sh      # 24h
+sbatch scripts/submit_ablation.sh       # 48h
+sbatch scripts/submit_crossval.sh       # 72h
 ```
 
 ---
@@ -687,6 +703,6 @@ MIT License
 
 ---
 
-**最后更新**: 2026-04-28
+**最后更新**: 2026-04-29
 
-**版本**: v0.3.0
+**版本**: v0.3.1

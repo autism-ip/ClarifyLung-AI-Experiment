@@ -150,6 +150,10 @@ def train_model(
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
 
+    # AMP 混合精度训练 (GPU 环境下加速)
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler(device.type) if use_amp else None
+
     # 差分学习率：尝试前缀匹配分组，失败则回退统一LR
     try:
         trainer_config = TrainingConfig(
@@ -177,10 +181,18 @@ def train_model(
             images, labels = images.to(device), labels.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+            if use_amp and scaler is not None:
+                with torch.amp.autocast(device.type):
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
             train_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -200,8 +212,13 @@ def train_model(
             with torch.no_grad():
                 for images, labels in val_loader:
                     images, labels = images.to(device), labels.to(device)
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
+                    if use_amp and scaler is not None:
+                        with torch.amp.autocast(device.type):
+                            outputs = model(images)
+                            loss = criterion(outputs, labels)
+                    else:
+                        outputs = model(images)
+                        loss = criterion(outputs, labels)
 
                     val_loss += loss.item()
                     _, predicted = outputs.max(1)

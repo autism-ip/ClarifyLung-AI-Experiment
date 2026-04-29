@@ -96,7 +96,6 @@ class KFoldCrossValidator:
             rng.shuffle(class_indices[label])
 
         # Distribute samples to folds
-        fold_sizes = len(indices) // self.num_folds
         fold_assignments = [[] for _ in range(self.num_folds)]
 
         for label in unique_labels:
