@@ -125,8 +125,10 @@ ClarifyLung-AI-Experiment/
 │   ├── submit_crossval.sh           # SLURM: 交叉验证提交
 │   ├── submit_visualize_results.sh  # SLURM: 实验结果可视化提交 (CPU)
 │   ├── submit_visualize_gradcam.sh  # SLURM: Grad-CAM可视化提交 (GPU)
+│   ├── submit_visualize_attention.sh # SLURM: Attention可视化提交 (GPU)
 │   ├── visualize_experiment_results.py  # 实验结果可视化CLI (自动读取JSON+.npy)
 │   ├── visualize_gradcam.py         # Grad-CAM单图可视化CLI
+│   ├── visualize_attention.py       # Transformer Attention单图可视化CLI
 │   ├── utils.py                     # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model, create_quick_test_datasets)
 │   └── CLAUDE.md
 ├── tests/                           # 单元测试模块
@@ -455,6 +457,15 @@ sbatch --export=IMAGE_PATH=datasets/IQ-OTHNCCD/Normal\ cases/normal_001.png,CHEC
 
 # 指定目标类别生成 Grad-CAM
 sbatch --export=IMAGE_PATH=path/to/image.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/gradcam_malignant.png,TARGET_CLASS=2 scripts/submit_visualize_gradcam.sh
+
+# Transformer Attention 可视化（需要GPU加载模型）
+sbatch --export=IMAGE_PATH=datasets/IQ-OTHNCCD/Normal\ cases/normal_001.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/attention_normal.png scripts/submit_visualize_attention.sh
+
+# 可视化所有注意力层
+sbatch --export=IMAGE_PATH=path/to/image.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/attention_all,ALL_LAYERS=1 scripts/submit_visualize_attention.sh
+
+# 分别可视化每个注意力头
+sbatch --export=IMAGE_PATH=path/to/image.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/attention_multihead.png,MULTI_HEAD=1 scripts/submit_visualize_attention.sh
 ```
 
 **脚本配置** (`scripts/submit_visualize_results.sh`):
@@ -465,6 +476,13 @@ sbatch --export=IMAGE_PATH=path/to/image.png,CHECKPOINT=outputs/checkpoints/best
 
 **脚本配置** (`scripts/submit_visualize_gradcam.sh`):
 - 分区: `gpu`（模型推理需要GPU）
+- GPU: 1块
+- CPU: 4核
+- 内存: 16GB
+- 时限: 15分钟
+
+**脚本配置** (`scripts/submit_visualize_attention.sh`):
+- 分区: `gpu`（模型加载需要GPU）
 - GPU: 1块
 - CPU: 4核
 - 内存: 16GB
@@ -652,7 +670,7 @@ sbatch scripts/submit_crossval.sh
 
 ### 实验五：可视化生成流程
 
-本项目提供 **7 种可视化类型**，覆盖训练过程监控、模型对比、可解释性分析全流程。
+本项目提供 **8 种可视化类型**，覆盖训练过程监控、模型对比、可解释性分析全流程。
 所有可视化在无头服务器（SLURM集群）上均可正常生成，后端已强制使用 `Agg`。
 
 #### 自动生成的可视化（实验脚本运行时自动产出）
@@ -723,6 +741,51 @@ python scripts/visualize_gradcam.py \
 | `--alpha` | 热力图叠加透明度 | `0.5` |
 | `--image-size` | 输入图像尺寸 | `224` |
 | `--model-dim` | 模型维度（需与 checkpoint 一致） | `256` |
+| `--num-layers` | Transformer 层数（需与 checkpoint 一致） | `4` |
+
+**`visualize_attention.py` — Transformer Attention 可视化**
+
+```bash
+# 可视化指定层的注意力（默认第0层）
+python scripts/visualize_attention.py \
+    --image datasets/IQ-OTHNCCD/Normal cases/normal_001.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --output outputs/figures/attention_normal.png
+
+# 可视化第2层注意力
+python scripts/visualize_attention.py \
+    --image path/to/image.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --layer-idx 2 \
+    --output outputs/figures/attention_layer2.png
+
+# 可视化所有注意力层（输出到目录）
+python scripts/visualize_attention.py \
+    --image path/to/image.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --all-layers \
+    --output outputs/figures/attention_all
+
+# 分别可视化每个注意力头
+python scripts/visualize_attention.py \
+    --image path/to/image.png \
+    --checkpoint outputs/checkpoints/best_model.pth \
+    --multi-head \
+    --output outputs/figures/attention_multihead.png
+```
+
+参数说明：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--image` | 输入图像路径（必填） | — |
+| `--checkpoint` | 模型权重路径 `.pth`（必填） | — |
+| `--output` | 输出路径（`.png` 或目录，必填） | — |
+| `--layer-idx` | 要可视化的注意力层索引 | `0` |
+| `--all-layers` | 可视化所有注意力层，输出到 `--output` 目录 | `False` |
+| `--multi-head` | 分别可视化每个注意力头 | `False` |
+| `--image-size` | 输入图像尺寸 | `224` |
+| `--model-dim` | 模型维度（需与 checkpoint 一致） | `256` |
+| `--nhead` | 注意力头数（需与 checkpoint 一致） | `8` |
 | `--num-layers` | Transformer 层数（需与 checkpoint 一致） | `4` |
 
 ---

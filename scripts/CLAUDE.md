@@ -19,6 +19,9 @@ visualize_experiment_results.py : 实验结果可视化CLI (自动读取JSON+.np
 visualize_gradcam.py         : Grad-CAM单图可视化CLI
                             - 需手动指定 --image, --checkpoint, --output
                             - 支持自动预测类别或手动指定 target-class
+visualize_attention.py       : Transformer Attention单图可视化CLI
+                            - 支持单层 / 所有层 / 多头 三种模式
+                            - 自动检测模型中的 MultiheadAttention 层
 submit_benchmark.sh          : SLURM批作业: 基准实验 (24h, --no-plot)
                              - 支持 QUICK_TEST=1 环境变量快速自检
 submit_ablation.sh           : SLURM批作业: 消融实验 (48h)
@@ -29,6 +32,8 @@ submit_visualize_results.sh  : SLURM批作业: 实验结果可视化 (1h, CPU分
                              - 支持 EXPERIMENT_DIR/TYPE/ONLY 环境变量覆盖
 submit_visualize_gradcam.sh  : SLURM批作业: Grad-CAM单图可视化 (15min, GPU分区)
                              - 支持 IMAGE_PATH/CHECKPOINT/OUTPUT_PATH/TARGET_CLASS 环境变量覆盖
+submit_visualize_attention.sh : SLURM批作业: Attention单图可视化 (15min, GPU分区)
+                             - 支持 IMAGE_PATH/CHECKPOINT/OUTPUT_PATH/LAYER_IDX/ALL_LAYERS/MULTI_HEAD 环境变量覆盖
 utils.py                     : 实验脚本公共工具
                              - set_seed / get_device
                              - split_dataset_with_transforms: 防泄漏的 train/val/test 划分

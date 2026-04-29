@@ -69,12 +69,16 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── submit_crossval.sh         # SLURM: 交叉验证提交
 │   ├── submit_visualize_results.sh  # SLURM: 实验结果可视化提交 (1h, CPU分区)
 │   ├── submit_visualize_gradcam.sh  # SLURM: Grad-CAM可视化提交 (15min, GPU分区)
+│   ├── submit_visualize_attention.sh # SLURM: Attention可视化提交 (15min, GPU分区)
 │   ├── visualize_experiment_results.py  # 实验结果可视化CLI (自动读取JSON+.npy)
 │   │                                    #   - 支持 benchmark/ablation/crossval 三种实验类型自动检测
 │   │                                    #   - 自动生成对比图 + 混淆矩阵 (需实验脚本保存的.npy)
 │   ├── visualize_gradcam.py       # Grad-CAM单图可视化CLI
 │   │                              #   - 需手动指定 --image, --checkpoint, --output
 │   │                              #   - 支持自动预测类别或手动指定 target-class
+│   ├── visualize_attention.py     # Transformer Attention单图可视化CLI
+│   │                              #   - 支持单层 / 所有层 / 多头 三种模式
+│   │                              #   - 自动检测模型中的 MultiheadAttention 层
 ├── configs/           # 配置文件模块
 │   ├── __init__.py
 │   └── dataset_config.py    # 数据集路径配置 (环境变量驱动)
@@ -357,8 +361,10 @@ from model import HybridModel
 | `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |
 | `scripts/submit_visualize_results.sh` | SLURM: 实验结果可视化提交 (1h, CPU分区) |
 | `scripts/submit_visualize_gradcam.sh` | SLURM: Grad-CAM可视化提交 (15min, GPU分区) |
+| `scripts/submit_visualize_attention.sh` | SLURM: Attention可视化提交 (15min, GPU分区) |
 | `scripts/visualize_experiment_results.py` | 实验结果可视化CLI (自动读取JSON+.npy，支持 benchmark/ablation/crossval 三种实验类型自动检测) |
 | `scripts/visualize_gradcam.py` | Grad-CAM单图可视化CLI (需手动指定 --image, --checkpoint, --output) |
+| `scripts/visualize_attention.py` | Transformer Attention单图可视化CLI (支持单层/所有层/多头三种模式) |
 | `configs/dataset_config.py` | 数据集路径配置 (环境变量驱动) |
 | `tests/` | 单元测试套件 |
 | `requirements.txt` | Python依赖列表 |
