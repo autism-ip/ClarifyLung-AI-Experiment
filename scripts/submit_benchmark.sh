@@ -54,7 +54,8 @@ fi
 # =============================================================================
 # 实验配置 (修改此处参数)
 # =============================================================================
-# 快速测试模式 (调试/排队测试): EPOCHS=2 BATCH_SIZE=4
+# 快速测试模式 (调试/排队测试): 设置 QUICK_TEST=1
+QUICK_TEST=0
 EPOCHS=50
 BATCH_SIZE=32
 LR=1e-4
@@ -77,6 +78,13 @@ echo "Start: $(date)"
 echo "Python: $(which python)"
 echo "=========================================="
 
+# 构建参数
+EXTRA_ARGS=""
+if [ "${QUICK_TEST}" = "1" ]; then
+    EXTRA_ARGS="--quick-test"
+    echo "[INFO] Quick test mode enabled"
+fi
+
 # 集群无图形界面，添加 --no-plot 跳过 matplotlib 绘图
 python scripts/benchmark_experiment.py \
   --epochs ${EPOCHS} \
@@ -84,7 +92,7 @@ python scripts/benchmark_experiment.py \
   --lr ${LR} \
   --transformer-lr ${TRANSFORMER_LR} \
   --output-dir ${OUTPUT_DIR} \
-  --no-plot
+  --no-plot ${EXTRA_ARGS}
 
 EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then

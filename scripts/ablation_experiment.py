@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.augmentation import get_train_augmentation, get_val_augmentation
 from configs import DATASET_PATHS
 from models import ConfigurableHybrid
-from experiments.ablation import AblationConfig
+from experiments.ablation import AblationConfig, AblationStudy
 from experiments.metrics import compute_metrics
 from experiments.visualization import plot_model_comparison
 from scripts.utils import set_seed, get_device, split_dataset_with_transforms, train_model
@@ -74,6 +74,9 @@ class AblationExperimentConfig:
     # 输出配置
     output_dir: str = "outputs/ablation"
     save_checkpoints: bool = True
+
+    # 快速测试模式
+    quick_test: bool = False
 
 
 # =============================================================================
@@ -161,6 +164,18 @@ def run_ablation_experiment(config: AblationExperimentConfig):
     print(f"  验证集: {len(val_dataset)}")
     print(f"  测试集: {len(test_dataset)}")
 
+    # 快速测试模式
+    if config.quick_test:
+        print("\n[QUICK TEST MODE] 启用快速测试: 200样本子集, 1 epoch, batch=8, workers=0")
+        from scripts.utils import create_quick_test_datasets
+        train_dataset, val_dataset, test_dataset = create_quick_test_datasets(
+            train_dataset, val_dataset, test_dataset, max_samples=200, seed=config.seed
+        )
+        config.num_epochs = 1
+        config.batch_size = min(config.batch_size, 8)
+        config.num_workers = 0
+        config.save_checkpoints = False
+
     # 创建数据加载器
     train_loader = DataLoader(
         train_dataset, batch_size=config.batch_size,
@@ -177,48 +192,68 @@ def run_ablation_experiment(config: AblationExperimentConfig):
     print("\n[2/4] 运行消融实验...")
 
     # 定义要测试的配置
-    ablation_configs = [
-        AblationConfig(
-            name='baseline_cnn',
-            multi_scale=False,
-            gate=None,
-            transformer=False,
-            cross_attention=False,
-            description='仅CNN，无Transformer'
-        ),
-        AblationConfig(
-            name='multiscale_only',
-            multi_scale=True,
-            gate=None,
-            transformer=False,
-            cross_attention=False,
-            description='多尺度特征，无门控'
-        ),
-        AblationConfig(
-            name='gating_added',
-            multi_scale=True,
-            gate='se',
-            transformer=False,
-            cross_attention=False,
-            description='多尺度+SE门控'
-        ),
-        AblationConfig(
-            name='transformer_added',
-            multi_scale=True,
-            gate='se',
-            transformer=True,
-            cross_attention=False,
-            description='完整双流架构'
-        ),
-        AblationConfig(
-            name='full_hybrid',
-            multi_scale=True,
-            gate='se',
-            transformer=True,
-            cross_attention=True,
-            description='完整混合架构+交叉注意力'
-        ),
-    ]
+    if config.quick_test:
+        ablation_configs = [
+            AblationConfig(
+                name='baseline_cnn',
+                multi_scale=False,
+                gate=None,
+                transformer=False,
+                cross_attention=False,
+                description='仅CNN，无Transformer'
+            ),
+            AblationConfig(
+                name='full_hybrid',
+                multi_scale=True,
+                gate='se',
+                transformer=True,
+                cross_attention=True,
+                description='完整混合架构+交叉注意力'
+            ),
+        ]
+    else:
+        ablation_configs = [
+            AblationConfig(
+                name='baseline_cnn',
+                multi_scale=False,
+                gate=None,
+                transformer=False,
+                cross_attention=False,
+                description='仅CNN，无Transformer'
+            ),
+            AblationConfig(
+                name='multiscale_only',
+                multi_scale=True,
+                gate=None,
+                transformer=False,
+                cross_attention=False,
+                description='多尺度特征，无门控'
+            ),
+            AblationConfig(
+                name='gating_added',
+                multi_scale=True,
+                gate='se',
+                transformer=False,
+                cross_attention=False,
+                description='多尺度+SE门控'
+            ),
+            AblationConfig(
+                name='transformer_added',
+                multi_scale=True,
+                gate='se',
+                transformer=True,
+                cross_attention=False,
+                description='完整双流架构'
+            ),
+            AblationConfig(
+                name='full_hybrid',
+                multi_scale=True,
+                gate='se',
+                transformer=True,
+                cross_attention=True,
+                description='完整混合架构+交叉注意力'
+            ),
+        ]
 
     results = {}
 
@@ -348,6 +383,7 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='随机种子')
     parser.add_argument('--output-dir', type=str, default='outputs/ablation', help='输出目录')
     parser.add_argument('--no-checkpoint', action='store_true', help='不保存模型权重')
+    parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 1epoch, 仅跑2个配置')
 
     args = parser.parse_args()
 
@@ -368,6 +404,7 @@ def main():
     config.seed = args.seed
     config.output_dir = args.output_dir
     config.save_checkpoints = not args.no_checkpoint
+    config.quick_test = args.quick_test
 
     # 运行实验
     run_ablation_experiment(config)

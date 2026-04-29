@@ -71,6 +71,9 @@ class BenchmarkExperimentConfig:
     save_checkpoints: bool = True
     save_plots: bool = True
 
+    # 快速测试模式
+    quick_test: bool = False
+
 
 # =============================================================================
 # 模型工厂
@@ -205,6 +208,24 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
     print(f"  验证集: {len(val_dataset)}")
     print(f"  测试集: {len(test_dataset)}")
 
+    # 快速测试模式：缩小数据集 + 降低 epoch + 禁用多进程
+    if config.quick_test:
+        print("\n[QUICK TEST MODE] 启用快速测试: 200样本子集, 1 epoch, batch=8, workers=0")
+        from scripts.utils import create_quick_test_datasets
+        train_dataset, val_dataset, test_dataset = create_quick_test_datasets(
+            train_dataset, val_dataset, test_dataset, max_samples=200, seed=config.seed
+        )
+        config.num_epochs = 1
+        config.batch_size = min(config.batch_size, 8)
+        config.num_workers = 0
+        config.save_checkpoints = False
+        config.save_plots = False
+        models_to_compare_quick = [
+            ('hybrid_advanced', 'Hybrid-Advanced', False),
+        ]
+    else:
+        models_to_compare_quick = None
+
     # 创建数据加载器
     train_loader = DataLoader(
         train_dataset, batch_size=config.batch_size,
@@ -221,13 +242,18 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
 
     device = get_device()
 
-    # 定义要对比的模型
-    models_to_compare = [
-        ('resnet50', 'ResNet50', True),
-        ('vit', 'ViT-B/16', True),
-        ('hybrid_basic', 'Hybrid-Basic', False),
-        ('hybrid_advanced', 'Hybrid-Advanced', False),
-    ]
+    # 定义要对比的模型 (快速测试模式只跑 Hybrid-Advanced)
+    if config.quick_test:
+        models_to_compare = [
+            ('hybrid_advanced', 'Hybrid-Advanced', False),
+        ]
+    else:
+        models_to_compare = [
+            ('resnet50', 'ResNet50', True),
+            ('vit', 'ViT-B/16', True),
+            ('hybrid_basic', 'Hybrid-Basic', False),
+            ('hybrid_advanced', 'Hybrid-Advanced', False),
+        ]
 
     results = []
     all_histories = {}
@@ -347,6 +373,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default='outputs/benchmark', help='输出目录')
     parser.add_argument('--no-checkpoint', action='store_true', help='不保存模型权重')
     parser.add_argument('--no-plot', action='store_true', help='不生成图表')
+    parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 1epoch, 仅跑Hybrid')
 
     args = parser.parse_args()
 
@@ -368,6 +395,7 @@ def main():
     config.output_dir = args.output_dir
     config.save_checkpoints = not args.no_checkpoint
     config.save_plots = not args.no_plot
+    config.quick_test = args.quick_test
 
     # 运行实验
     run_benchmark_experiment(config)

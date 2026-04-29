@@ -79,6 +79,39 @@ def split_dataset_with_transforms(
     return train_raw, val_raw, test_raw
 
 
+def create_quick_test_datasets(
+    train_dataset,
+    val_dataset,
+    test_dataset,
+    max_samples: int = 200,
+    seed: int = 42,
+):
+    """
+    创建快速测试用的数据集子集
+
+    策略：按 70/15/15 比例从原数据集分层抽取，
+    保证 train/val/test 结构不变，仅缩小规模。
+
+    Returns:
+        (train_subset, val_subset, test_subset)
+    """
+    from torch.utils.data import Subset
+
+    g = torch.Generator().manual_seed(seed)
+
+    train_n = int(max_samples * 0.70)
+    val_n = int(max_samples * 0.15)
+    test_n = max_samples - train_n - val_n
+
+    def _subset(ds, n):
+        if len(ds) <= n:
+            return ds
+        indices = torch.randperm(len(ds), generator=g)[:n].tolist()
+        return Subset(ds, indices)
+
+    return _subset(train_dataset, train_n), _subset(val_dataset, val_n), _subset(test_dataset, test_n)
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,

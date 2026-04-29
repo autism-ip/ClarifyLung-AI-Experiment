@@ -53,7 +53,8 @@ fi
 # =============================================================================
 # 实验配置 (修改此处参数)
 # =============================================================================
-# 快速测试模式 (调试/排队测试): EPOCHS=2 BATCH_SIZE=4
+# 快速测试模式 (调试/排队测试): 设置 QUICK_TEST=1
+QUICK_TEST=0
 EPOCHS=30
 BATCH_SIZE=32
 LR=1e-4
@@ -76,12 +77,19 @@ echo "Start: $(date)"
 echo "Python: $(which python)"
 echo "=========================================="
 
+EXTRA_ARGS=""
+if [ "${QUICK_TEST}" = "1" ]; then
+    EXTRA_ARGS="--quick-test"
+    echo "[INFO] Quick test mode enabled"
+fi
+
 python scripts/ablation_experiment.py \
   --epochs ${EPOCHS} \
   --batch-size ${BATCH_SIZE} \
   --lr ${LR} \
   --transformer-lr ${TRANSFORMER_LR} \
-  --output-dir ${OUTPUT_DIR}
+  --output-dir ${OUTPUT_DIR} \
+  ${EXTRA_ARGS}
 
 EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then

@@ -71,6 +71,9 @@ class CrossValidationConfig:
     output_dir: str = "outputs/cross_validation"
     save_checkpoints: bool = True
 
+    # 快速测试模式
+    quick_test: bool = False
+
 
 # =============================================================================
 # 训练和评估函数
@@ -235,6 +238,20 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
         config.dataset3_path,
         transform=train_transform
     )
+
+    # 快速测试模式
+    if config.quick_test:
+        print("\n[QUICK TEST MODE] 启用快速测试: 200样本子集, 3 folds, 1 epoch, batch=8, workers=0")
+        from torch.utils.data import Subset
+        g = torch.Generator().manual_seed(config.seed)
+        indices = torch.randperm(len(dataset_for_split), generator=g)[:200].tolist()
+        dataset_for_split = Subset(dataset_for_split, indices)
+        dataset_train = Subset(dataset_train, indices)
+        config.n_folds = 3
+        config.num_epochs = 1
+        config.batch_size = min(config.batch_size, 8)
+        config.num_workers = 0
+        config.save_checkpoints = False
 
     print(f"  合并数据集大小: {len(dataset_for_split)}")
 
@@ -452,6 +469,7 @@ def main():
     # 输出配置
     parser.add_argument('--output-dir', type=str, default='outputs/cross_validation', help='输出目录')
     parser.add_argument('--no-checkpoint', action='store_true', help='不保存模型权重')
+    parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 1fold, 1epoch')
 
     args = parser.parse_args()
 
@@ -472,6 +490,7 @@ def main():
     config.learning_rate = args.lr
     config.output_dir = args.output_dir
     config.save_checkpoints = not args.no_checkpoint
+    config.quick_test = args.quick_test
 
     # 运行实验
     run_cross_validation_experiment(config)

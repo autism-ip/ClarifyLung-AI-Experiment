@@ -180,6 +180,11 @@ python scripts/ablation_experiment.py --epochs 30 --batch-size 32
 
 # 交叉验证
 python scripts/cross_validation_experiment.py --folds 5 --epochs 30
+
+# 快速测试模式 (200样本, 1epoch, 秒级验证)
+python scripts/benchmark_experiment.py --quick-test
+python scripts/ablation_experiment.py --quick-test
+python scripts/cross_validation_experiment.py --quick-test
 ```
 
 ### SLURM 远程提交
@@ -189,6 +194,11 @@ python scripts/cross_validation_experiment.py --folds 5 --epochs 30
 sbatch scripts/submit_benchmark.sh    # 24h
 sbatch scripts/submit_ablation.sh     # 48h
 sbatch scripts/submit_crossval.sh     # 72h
+
+# 快速自检模式 (200样本, 1epoch, 验证环境/数据/GPU)
+sbatch --export=QUICK_TEST=1 scripts/submit_benchmark.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_ablation.sh
+sbatch --export=QUICK_TEST=1 scripts/submit_crossval.sh
 ```
 
 ### 模型评估
