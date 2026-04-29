@@ -123,6 +123,8 @@ ClarifyLung-AI-Experiment/
 │   ├── submit_benchmark.sh          # SLURM: 基准实验提交
 │   ├── submit_ablation.sh           # SLURM: 消融实验提交
 │   ├── submit_crossval.sh           # SLURM: 交叉验证提交
+│   ├── submit_visualize_results.sh  # SLURM: 实验结果可视化提交 (CPU)
+│   ├── submit_visualize_gradcam.sh  # SLURM: Grad-CAM可视化提交 (GPU)
 │   ├── visualize_experiment_results.py  # 实验结果可视化CLI (自动读取JSON+.npy)
 │   ├── visualize_gradcam.py         # Grad-CAM单图可视化CLI
 │   ├── utils.py                     # 实验脚本公共工具 (set_seed, get_device, split_dataset_with_transforms, train_model, create_quick_test_datasets)
@@ -435,6 +437,38 @@ sbatch scripts/submit_crossval.sh
 - CPU: 8核
 - 内存: 32GB
 - 时限: 72小时
+
+#### 提交可视化作业（实验完成后）
+
+```bash
+# 实验结果批量可视化（CPU即可，无需GPU）
+sbatch scripts/submit_visualize_results.sh
+
+# 指定实验目录（覆盖脚本默认值）
+sbatch --export=EXPERIMENT_DIR=outputs/ablation scripts/submit_visualize_results.sh
+
+# 仅生成混淆矩阵
+sbatch --export=EXPERIMENT_DIR=outputs/benchmark,ONLY=confusion scripts/submit_visualize_results.sh
+
+# Grad-CAM 单图可视化（需要GPU加载模型）
+sbatch --export=IMAGE_PATH=datasets/IQ-OTHNCCD/Normal\ cases/normal_001.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/gradcam_normal.png scripts/submit_visualize_gradcam.sh
+
+# 指定目标类别生成 Grad-CAM
+sbatch --export=IMAGE_PATH=path/to/image.png,CHECKPOINT=outputs/checkpoints/best_model.pth,OUTPUT_PATH=outputs/figures/gradcam_malignant.png,TARGET_CLASS=2 scripts/submit_visualize_gradcam.sh
+```
+
+**脚本配置** (`scripts/submit_visualize_results.sh`):
+- 分区: `cpu`（纯绘图，无需GPU）
+- CPU: 4核
+- 内存: 8GB
+- 时限: 1小时
+
+**脚本配置** (`scripts/submit_visualize_gradcam.sh`):
+- 分区: `gpu`（模型推理需要GPU）
+- GPU: 1块
+- CPU: 4核
+- 内存: 16GB
+- 时限: 15分钟
 
 #### SLURM 作业监控
 

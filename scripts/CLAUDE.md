@@ -25,6 +25,10 @@ submit_ablation.sh           : SLURM批作业: 消融实验 (48h)
                              - 支持 QUICK_TEST=1 环境变量快速自检
 submit_crossval.sh           : SLURM批作业: 交叉验证 (72h)
                              - 支持 QUICK_TEST=1 环境变量快速自检
+submit_visualize_results.sh  : SLURM批作业: 实验结果可视化 (1h, CPU分区)
+                             - 支持 EXPERIMENT_DIR/TYPE/ONLY 环境变量覆盖
+submit_visualize_gradcam.sh  : SLURM批作业: Grad-CAM单图可视化 (15min, GPU分区)
+                             - 支持 IMAGE_PATH/CHECKPOINT/OUTPUT_PATH/TARGET_CLASS 环境变量覆盖
 utils.py                     : 实验脚本公共工具
                              - set_seed / get_device
                              - split_dataset_with_transforms: 防泄漏的 train/val/test 划分
