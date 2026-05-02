@@ -6,6 +6,27 @@
 
 ---
 
+## ⚠️ 集群使用规范（必读）
+
+本项目在**SLURM集群**上运行，严格遵守以下规范：
+
+| 节点类型 | 功能 | 可用操作 |
+|---------|------|---------|
+| **登录节点** | 有网络，有CPU | 代码编辑、数据下载、环境配置、轻量验证、可视化 |
+| **计算节点** | 无网络，有GPU | **必须通过 `sbatch` 提交**，运行实验训练 |
+
+**禁止行为**：
+- ❌ 在登录节点运行训练脚本（会被系统kill）
+- ❌ 在计算节点下载数据/模型（无网络连接）
+- ❌ 直接 `python scripts/experiment_runner.py`（必须在计算节点通过sbatch运行）
+
+**正确流程**：
+1. 登录节点：下载数据、安装环境、编辑代码
+2. `sbatch scripts/submit_experiment.sh`：提交实验到计算节点
+3. 登录节点：查看结果、生成图表、分析数据
+
+---
+
 ## 1. 环境准备（5分钟）
 
 ### 1.1 克隆项目
@@ -126,11 +147,14 @@ Pipeline validation passed!
 ### 3.2 快速实验（200样本，1 epoch）
 
 ```bash
-# 本地快速测试
+# 本地快速测试（仅登录节点，用于验证代码）
 python scripts/benchmark_experiment.py --quick-test
 
-# 或使用统一运行器
+# 或使用统一运行器（登录节点快速验证）
 python scripts/experiment_runner.py --type benchmark --quick-test
+
+# 集群快速测试（通过SLURM提交到计算节点）
+sbatch --export=EXP_TYPE=benchmark,QUICK_TEST=1 scripts/submit_experiment.sh
 ```
 
 **预期输出**：
@@ -150,23 +174,30 @@ Results saved to outputs/quick_test/
 
 ### 4.1 实验一：数据稀缺性能曲线（主实验）⭐⭐⭐⭐⭐
 
-#### 本地运行（小规模测试）
-
-```bash
-# 只跑1个比例、1个模型、1个种子（测试用）
-python scripts/experiment_runner.py \
-  --type data_scarcity \
-  --model hybrid_advanced \
-  --data-ratio 0.05 \
-  --epochs 10 \
-  --pretrained False \
-  --seed 42
-```
-
 #### 集群运行（完整实验）
 
 ```bash
-# 提交到SLURM
+# 提交到SLURM（所有实验必须通过此方式）
+# 方式1: 单比例测试（1个模型, 1个比例, 1个种子）
+sbatch \
+  --export=EXP_TYPE=data_scarcity,MODEL=hybrid_advanced,EPOCHS=10,DATA_RATIO=0.05,SEED=42 \
+  scripts/submit_experiment.sh
+
+# 方式2: 全比例实验（通过统一运行器内部循环）
+sbatch \
+  --export=EXP_TYPE=data_scarcity,MODEL=hybrid_advanced,EPOCHS=50,SEED=42 \
+  scripts/submit_experiment.sh
+
+# 方式3: 批量提交所有模型 × 所有比例 × 所有种子
+for model in resnet50 vit hybrid_basic hybrid_advanced; do
+  for seed in 42 123 456; do
+    sbatch \
+      --export=EXP_TYPE=data_scarcity,MODEL=${model},EPOCHS=50,SEED=${seed} \
+      --job-name="ds_${model}_s${seed}" \
+      scripts/submit_experiment.sh
+  done
+done
+```
 sbatch scripts/submit_benchmark.sh --experiment-type data_scarcity
 ```
 
@@ -216,16 +247,14 @@ python scripts/visualize_experiment_results.py \
 
 ```bash
 # X光训练 → 切片测试
-python scripts/experiment_runner.py \
-  --type cross_modal \
-  --cross-modal-type xray_to_histopathology \
-  --epochs 50
+sbatch \
+  --export=EXP_TYPE=cross_modal,MODEL=hybrid_advanced,CROSS_MODAL_TYPE=xray_to_histopathology,EPOCHS=50 \
+  scripts/submit_experiment.sh
 
 # 切片训练 → X光测试
-python scripts/experiment_runner.py \
-  --type cross_modal \
-  --cross-modal-type histopathology_to_xray \
-  --epochs 50
+sbatch \
+  --export=EXP_TYPE=cross_modal,MODEL=hybrid_advanced,CROSS_MODAL_TYPE=histopathology_to_xray,EPOCHS=50 \
+  scripts/submit_experiment.sh
 ```
 
 #### 集群提交
@@ -246,11 +275,9 @@ sbatch scripts/submit_crossval.sh --experiment-type cross_modal
 
 ```bash
 # 5类分类
-python scripts/experiment_runner.py \
-  --type finegrained \
-  --model hybrid_advanced \
-  --num-classes 5 \
-  --epochs 50
+sbatch \
+  --export=EXP_TYPE=finegrained,MODEL=hybrid_advanced,FINEGRAINED=1,EPOCHS=50 \
+  scripts/submit_experiment.sh
 ```
 
 **标签映射**（自动完成）：
@@ -267,12 +294,10 @@ python scripts/experiment_runner.py \
 #### 运行命令
 
 ```bash
-python scripts/ablation_experiment.py --epochs 30
-```
-
-或统一运行器：
-```bash
-python scripts/experiment_runner.py --type ablation
+# 通过SLURM提交消融实验
+sbatch \
+  --export=EXP_TYPE=ablation,MODEL=hybrid_advanced,EPOCHS=30 \
+  scripts/submit_experiment.sh
 ```
 
 **5个配置**（自动运行）：
@@ -309,10 +334,11 @@ python scripts/visualize_attention.py \
 
 ## 5. 结果汇总与可视化
 
-### 5.1 自动生成图表
+### 5.1 自动生成图表（登录节点运行，无需GPU）
 
 ```bash
 # 自动检测实验类型并生成所有图表
+# 注意：此脚本在登录节点运行即可，不需要GPU
 python scripts/visualize_experiment_results.py \
   --dir outputs/benchmark_35943
 ```
