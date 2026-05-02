@@ -86,6 +86,7 @@ class HybridModel(nn.Module):
                 model_dim=model_dim,
                 dropout=dropout,
                 nhead=nhead,
+                dim_feedforward=3072,
                 num_layers=num_layers
             )
             
@@ -114,35 +115,63 @@ class HybridModel(nn.Module):
                     
                     # 2. 加载Transformer encoder权重
                     vit_state = vit_pretrained.encoder.state_dict()
-                    our_state = self.transformer_encoder.transformer.state_dict()
+                    
+                    # 创建权重映射：torchvision ViT命名 -> 标准TransformerEncoder命名
+                    mapped_state = {}
+                    for key, value in vit_state.items():
+                        # 映射层索引: encoder_layer_0 -> 0
+                        if key.startswith('layers.encoder_layer_'):
+                            parts = key.split('.')
+                            layer_idx = parts[1].replace('encoder_layer_', '')
+                            new_key = f"layers.{layer_idx}"
+                            
+                            # 映射子模块名称
+                            remaining = '.'.join(parts[2:])
+                            if remaining.startswith('self_attention.'):
+                                remaining = remaining.replace('self_attention.', 'self_attn.')
+                            elif remaining.startswith('ln_1'):
+                                remaining = remaining.replace('ln_1', 'norm1')
+                            elif remaining.startswith('ln_2'):
+                                remaining = remaining.replace('ln_2', 'norm2')
+                            elif remaining.startswith('mlp.'):
+                                # mlp.0 -> linear1, mlp.3 -> linear2
+                                remaining = remaining.replace('mlp.0.', 'linear1.').replace('mlp.3.', 'linear2.')
+                            
+                            mapped_state[f"{new_key}.{remaining}"] = value
+                        elif key == 'pos_embedding':
+                            # 跳过位置编码，因为我们使用正弦位置编码
+                            continue
+                        elif key.startswith('ln.'):
+                            # 最后的LayerNorm，映射到我们的结构
+                            mapped_state[f"norm.{key[3:]}"] = value
                     
                     # 检查层数是否匹配
                     vit_layers = len(vit_pretrained.encoder.layers)
                     our_layers = num_layers
                     
-                    if vit_layers == our_layers and model_dim == 768:
-                        # 直接加载所有权重
-                        self.transformer_encoder.transformer.load_state_dict(vit_state)
-                        print(f"[INFO] 成功加载ViT-B/16全部{vit_layers}层Transformer权重")
-                    elif model_dim == 768:
-                        # 层数不匹配，加载前our_layers层
-                        our_state_filtered = {}
-                        for key, value in vit_state.items():
+                    if model_dim == 768:
+                        # 过滤层数
+                        filtered_state = {}
+                        for key, value in mapped_state.items():
                             if key.startswith('layers.'):
-                                layer_idx = int(key.split('.')[1])
-                                if layer_idx < our_layers:
-                                    our_state_filtered[key] = value
+                                try:
+                                    layer_idx = int(key.split('.')[1])
+                                    if layer_idx < our_layers:
+                                        filtered_state[key] = value
+                                except ValueError:
+                                    # 非数字层索引（如norm等），直接保留
+                                    filtered_state[key] = value
                             else:
-                                our_state_filtered[key] = value
+                                filtered_state[key] = value
                         
-                        missing, unexpected = self.transformer_encoder.transformer.load_state_dict(our_state_filtered, strict=False)
+                        missing, unexpected = self.transformer_encoder.transformer.load_state_dict(filtered_state, strict=False)
                         if missing:
-                            print(f"[WARNING] 缺失权重: {missing}")
+                            print(f"[WARNING] 缺失权重: {list(missing)[:5]}...")
                         if unexpected:
-                            print(f"[WARNING] 多余权重: {unexpected}")
-                        print(f"[INFO] 加载ViT-B/16前{min(vit_layers, our_layers)}层Transformer权重")
+                            print(f"[WARNING] 多余权重: {list(unexpected)[:5]}...")
+                        print(f"[INFO] 成功加载ViT-B/16前{min(vit_layers, our_layers)}层Transformer权重")
                     else:
-                        print(f"[WARNING] 模型维度不匹配，无法加载预训练Transformer权重")
+                        print(f"[WARNING] 模型维度{model_dim}与ViT-B/16维度768不匹配，无法加载预训练Transformer权重")
                         
                 except Exception as e:
                     print(f"[WARNING] 加载预训练ViT权重失败: {e}")

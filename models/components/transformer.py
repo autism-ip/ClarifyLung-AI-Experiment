@@ -72,7 +72,7 @@ class TransformerEncoder(nn.Module):
         model_dim=512,
         dropout=0.1,
         nhead=8,
-        dim_feedforward=2048,
+        dim_feedforward=3072,
         num_layers=6
     ):
         super().__init__()

@@ -81,7 +81,7 @@ if [ "${QUICK_TEST}" = "1" ]; then
 fi
 
 # 集群无图形界面，添加 --no-plot
-python scripts/benchmark_experiment.py \
+python -u scripts/benchmark_experiment.py \
   --epochs ${EPOCHS} \
   --batch-size ${BATCH_SIZE} \
   --lr ${LR} \

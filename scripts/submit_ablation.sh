@@ -65,7 +65,7 @@ if [ "${QUICK_TEST}" = "1" ]; then
     EXTRA_ARGS="--quick-test"
 fi
 
-python scripts/ablation_experiment.py \
+python -u scripts/ablation_experiment.py \
   --epochs ${EPOCHS} \
   --batch-size ${BATCH_SIZE} \
   --lr ${LR} \

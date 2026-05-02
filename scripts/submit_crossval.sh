@@ -65,7 +65,7 @@ if [ "${QUICK_TEST}" = "1" ]; then
     EXTRA_ARGS="--quick-test"
 fi
 
-python scripts/cross_validation_experiment.py \
+python -u scripts/cross_validation_experiment.py \
   --folds ${FOLDS} \
   --epochs ${EPOCHS} \
   --batch-size ${BATCH_SIZE} \
