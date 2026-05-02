@@ -3,6 +3,8 @@
  * [OUTPUT]: 对外提供 FeatureFusion, MutilScaleFeatureExtractor
  * [POS]: models/components 的特征提取器，被 hybrid_model.HybridModel 消费
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+ 公平对比实验: 所有模型都从头训练，不使用预训练权重
 """
 
 import torch
@@ -43,13 +45,14 @@ class MutilScaleFeatureExtractor(nn.Module):
         model=None,
         feature_layers=None,
         use_multi_scale=True,
-        target_spatial_size=(7, 7)
+        target_spatial_size=(7, 7),
+        pretrained=False  # 默认不使用预训练权重（公平对比）
     ):
         super().__init__()
         if feature_layers is None:
             feature_layers = ['layer3', 'layer4']
         if model is None:
-            model = models.resnet50(pretrained=True)
+            model = models.resnet50(pretrained=pretrained)
 
         self.feature_layers = feature_layers
         self.model = model

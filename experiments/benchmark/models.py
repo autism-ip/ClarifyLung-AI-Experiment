@@ -3,6 +3,8 @@
 [OUTPUT]: BaselineModelFactory for creating benchmark models
 [POS]: experiments/benchmark/ model factory
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+公平对比实验: 所有模型都从头训练，不使用预训练权重
 """
 
 import torch
@@ -15,19 +17,20 @@ import timm
 # =============================================================================
 
 
-def create_resnet50(num_classes: int = 3) -> nn.Module:
+def create_resnet50(num_classes: int = 3, pretrained: bool = True) -> nn.Module:
     """
-    创建预训练 ResNet50 模型
+    创建 ResNet50 模型
 
     Args:
         num_classes: 输出类别数，默认3 (normal/malignant/benign)
+        pretrained: 是否使用预训练权重，默认True
 
     Returns:
-        预训练 ResNet50 模型
+        ResNet50 模型
     """
     model = timm.create_model(
         "resnet50",
-        pretrained=True,
+        pretrained=pretrained,
         num_classes=num_classes,
     )
     return model
@@ -38,21 +41,30 @@ def create_resnet50(num_classes: int = 3) -> nn.Module:
 # =============================================================================
 
 
-def create_vit(num_classes: int = 3) -> nn.Module:
+def create_vit(num_classes: int = 3, pretrained: bool = True) -> nn.Module:
     """
-    创建预训练 Vision Transformer (ViT-B/16) 模型
+    创建 Vision Transformer (ViT-B/16) 模型
 
     Args:
         num_classes: 输出类别数，默认3
+        pretrained: 是否使用预训练权重，默认True
 
     Returns:
-        预训练 ViT-B/16 模型
+        ViT-B/16 模型
     """
-    model = timm.create_model(
-        "vit_base_patch16_224",
-        pretrained=True,
-        num_classes=num_classes,
-    )
+    # 使用PyTorch原生ViT实现，避免HuggingFace网络问题
+    from torchvision.models import vit_b_16, ViT_B_16_Weights
+    
+    if pretrained:
+        weights = ViT_B_16_Weights.DEFAULT
+    else:
+        weights = None
+    
+    model = vit_b_16(weights=weights)
+    
+    # 修改分类头以匹配num_classes
+    model.heads.head = nn.Linear(model.heads.head.in_features, num_classes)
+    
     return model
 
 
@@ -69,10 +81,10 @@ class HybridBasic(nn.Module):
     - 直接拼接后分类
     """
 
-    def __init__(self, num_classes: int = 3, model_dim: int = 256):
+    def __init__(self, num_classes: int = 3, model_dim: int = 256, pretrained: bool = False):
         super().__init__()
         # CNN特征提取器
-        self.cnn = timm.create_model("resnet50", pretrained=True, features_only=True)
+        self.cnn = timm.create_model("resnet50", pretrained=pretrained, features_only=True)
         cnn_channels = 2048  # ResNet50 layer4 output channels
 
         # 投影层
@@ -114,17 +126,18 @@ class HybridBasic(nn.Module):
         return self.classifier(fused)
 
 
-def create_hybrid_basic(num_classes: int = 3) -> nn.Module:
+def create_hybrid_basic(num_classes: int = 3, pretrained: bool = True) -> nn.Module:
     """
     创建简化版混合模型
 
     Args:
         num_classes: 输出类别数，默认3
+        pretrained: 是否使用预训练权重，默认True
 
     Returns:
         HybridBasic 模型实例
     """
-    return HybridBasic(num_classes=num_classes)
+    return HybridBasic(num_classes=num_classes, pretrained=pretrained)
 
 
 # =============================================================================
@@ -138,7 +151,6 @@ class HybridAdvanced(nn.Module):
     - 多尺度CNN特征提取
     - 门控机制
     - 交叉注意力融合
-    - 预训练backbone
     """
 
     def __init__(
@@ -148,10 +160,11 @@ class HybridAdvanced(nn.Module):
         nhead: int = 8,
         num_layers: int = 4,
         dropout: float = 0.1,
+        pretrained: bool = True,  # 默认使用预训练权重
     ):
         super().__init__()
-        # 预训练ResNet50 backbone
-        self.backbone = timm.create_model("resnet50", pretrained=True)
+        # ResNet50 backbone
+        self.backbone = timm.create_model("resnet50", pretrained=pretrained)
         # timm uses act1 instead of relu in newer versions
         act_layer = getattr(self.backbone, 'relu', getattr(self.backbone, 'act1', None))
         self.feature_extractor = nn.ModuleDict(

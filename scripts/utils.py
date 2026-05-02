@@ -7,6 +7,7 @@
 """
 
 import random
+from pathlib import Path
 from typing import Tuple, Optional
 
 import torch
@@ -123,6 +124,13 @@ def train_model(
     weight_decay: float = 0.01,
     save_path: Optional[str] = None,
     log_prefix: str = "",
+    # 早停参数
+    early_stopping_patience: int = 10,
+    early_stopping_delta: float = 0.001,
+    # 学习率预热参数
+    warmup_epochs: int = 5,
+    # 梯度裁剪参数
+    max_grad_norm: float = 1.0,
 ) -> dict:
     """
     通用训练函数，封装训练循环、验证、检查点保存
@@ -138,11 +146,17 @@ def train_model(
         weight_decay: 权重衰减
         save_path: 最佳模型保存路径（None则不保存）
         log_prefix: 日志前缀（如 "Fold 1, "）
+        early_stopping_patience: 早停耐心值（默认10）
+        early_stopping_delta: 早停最小改善（默认0.001）
+        warmup_epochs: 学习率预热轮数（默认5）
+        max_grad_norm: 梯度裁剪阈值（默认1.0）
 
     Returns:
         {
             'train_history': {'train_loss': [...], 'train_acc': [...], 'val_loss': [...], 'val_acc': [...]},
             'best_val_acc': float,
+            'best_epoch': int,
+            'early_stopped': bool,
         }
     """
     from training.trainer import TrainingConfig, get_optimizer
@@ -165,9 +179,18 @@ def train_model(
     except Exception:
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    # 学习率调度：预热 + CosineAnnealing
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return (epoch + 1) / warmup_epochs  # 线性预热
+        return 0.5 * (1 + np.cos(np.pi * (epoch - warmup_epochs) / (epochs - warmup_epochs)))
+    
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     best_val_acc = 0.0
+    best_epoch = 0
+    patience_counter = 0
+    early_stopped = False
     train_history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
     for epoch in range(epochs):
@@ -186,12 +209,17 @@ def train_model(
                     outputs = model(images)
                     loss = criterion(outputs, labels)
                 scaler.scale(loss).backward()
+                # 梯度裁剪
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 loss.backward()
+                # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
                 optimizer.step()
 
             train_loss += loss.item()
@@ -235,11 +263,22 @@ def train_model(
         train_history['val_loss'].append(val_loss)
         train_history['val_acc'].append(val_acc)
 
-        # 保存最佳模型
-        if val_loader is not None and val_acc > best_val_acc:
-            best_val_acc = val_acc
-            if save_path is not None:
-                torch.save(model.state_dict(), save_path)
+        # 早停检查
+        if val_loader is not None:
+            if val_acc > best_val_acc + early_stopping_delta:
+                best_val_acc = val_acc
+                best_epoch = epoch + 1
+                patience_counter = 0
+                if save_path is not None:
+                    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(model.state_dict(), save_path)
+            else:
+                patience_counter += 1
+
+            if patience_counter >= early_stopping_patience:
+                print(f"{log_prefix}Early stopping at epoch {epoch+1} (patience={early_stopping_patience})")
+                early_stopped = True
+                break
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             log = f"{log_prefix}Epoch {epoch+1}/{epochs} | Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}"
@@ -250,4 +289,6 @@ def train_model(
     return {
         'train_history': train_history,
         'best_val_acc': best_val_acc,
+        'best_epoch': best_epoch,
+        'early_stopped': early_stopped,
     }

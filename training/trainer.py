@@ -69,23 +69,44 @@ class TrainingConfig:
 
 @dataclass
 class TrainingMetrics:
-    """训练指标记录类"""
+    """训练指标记录类 - 扩展版本，保存完整实验数据"""
+    # 基础指标
     train_losses: List[float] = field(default_factory=list)
     train_accs: List[float] = field(default_factory=list)
     val_losses: List[float] = field(default_factory=list)
     val_accs: List[float] = field(default_factory=list)
     learning_rates: List[float] = field(default_factory=list)
     epoch_times: List[float] = field(default_factory=list)
+    
+    # 扩展指标：每epoch详细分类指标
+    val_precision_per_class: List[List[float]] = field(default_factory=list)
+    val_recall_per_class: List[List[float]] = field(default_factory=list)
+    val_f1_per_class: List[List[float]] = field(default_factory=list)
+    val_f1_macro: List[float] = field(default_factory=list)
+    val_f1_weighted: List[float] = field(default_factory=list)
+    
+    # 扩展指标：训练详细信息
+    train_precision_per_class: List[List[float]] = field(default_factory=list)
+    train_recall_per_class: List[List[float]] = field(default_factory=list)
+    
+    # 扩展指标：梯度统计（可选）
+    grad_norms: List[float] = field(default_factory=list)
 
     def get_best_epoch(self, metric: str = "val_acc", mode: str = "max") -> Tuple[int, float]:
         """获取最佳epoch"""
-        if metric == "val_acc":
-            values = self.val_accs
-        elif metric == "val_loss":
-            values = self.val_losses
-        else:
-            raise ValueError(f"Unknown metric: {metric}")
-
+        metric_map = {
+            "val_acc": self.val_accs,
+            "val_loss": self.val_losses,
+            "val_f1_macro": self.val_f1_macro,
+            "val_f1_weighted": self.val_f1_weighted,
+        }
+        if metric not in metric_map:
+            raise ValueError(f"Unknown metric: {metric}. Available: {list(metric_map.keys())}")
+        
+        values = metric_map[metric]
+        if not values:
+            return -1, 0.0
+            
         if mode == "max":
             best_value = max(values)
         else:
@@ -94,17 +115,28 @@ class TrainingMetrics:
         return best_epoch, best_value
 
     def save(self, path: str):
-        """保存指标到文件"""
+        """保存指标到文件 - 保存完整实验数据"""
         import json
+        data = {
+            # 基础指标
+            'train_losses': self.train_losses,
+            'train_accs': self.train_accs,
+            'val_losses': self.val_losses,
+            'val_accs': self.val_accs,
+            'learning_rates': self.learning_rates,
+            'epoch_times': self.epoch_times,
+            # 扩展指标
+            'val_precision_per_class': self.val_precision_per_class,
+            'val_recall_per_class': self.val_recall_per_class,
+            'val_f1_per_class': self.val_f1_per_class,
+            'val_f1_macro': self.val_f1_macro,
+            'val_f1_weighted': self.val_f1_weighted,
+            'train_precision_per_class': self.train_precision_per_class,
+            'train_recall_per_class': self.train_recall_per_class,
+            'grad_norms': self.grad_norms,
+        }
         with open(path, 'w') as f:
-            json.dump({
-                'train_losses': self.train_losses,
-                'train_accs': self.train_accs,
-                'val_losses': self.val_losses,
-                'val_accs': self.val_accs,
-                'learning_rates': self.learning_rates,
-                'epoch_times': self.epoch_times,
-            }, f, indent=2)
+            json.dump(data, f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> 'TrainingMetrics':

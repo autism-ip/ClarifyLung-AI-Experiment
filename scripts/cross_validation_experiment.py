@@ -9,6 +9,10 @@
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+import os
+# 设置HuggingFace镜像（解决网络问题）
+os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
+
 import sys
 import json
 import time
@@ -86,12 +90,23 @@ def train_fold(
     epochs: int,
     device: torch.device,
     config: CrossValidationConfig,
-    fold: int
+    fold: int,
+    # 早停参数
+    early_stopping_patience: int = 10,
+    early_stopping_delta: float = 0.001,
+    # 学习率预热参数
+    warmup_epochs: int = 5,
+    # 梯度裁剪参数
+    max_grad_norm: float = 1.0,
 ) -> Tuple[Dict, Dict, float]:
     """训练单个折，返回训练历史、验证指标、训练时间"""
 
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
+
+    # AMP 混合精度训练
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler(device.type) if use_amp else None
 
     # 使用差分学习率（CNN小LR，Transformer大LR）
     trainer_config = TrainingConfig(
@@ -100,10 +115,20 @@ def train_fold(
         weight_decay=config.weight_decay,
     )
     optimizer = get_optimizer(model, trainer_config)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    
+    # 学习率调度：预热 + CosineAnnealing
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return (epoch + 1) / warmup_epochs
+        return 0.5 * (1 + np.cos(np.pi * (epoch - warmup_epochs) / (epochs - warmup_epochs)))
+    
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     train_history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_val_acc = 0.0
+    best_epoch = 0
+    patience_counter = 0
+    early_stopped = False
     start_time = time.time()
 
     for epoch in range(epochs):
@@ -116,10 +141,22 @@ def train_fold(
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+            
+            if use_amp and scaler is not None:
+                with torch.amp.autocast(device.type):
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                optimizer.step()
 
             train_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -138,8 +175,13 @@ def train_fold(
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
+                if use_amp and scaler is not None:
+                    with torch.amp.autocast(device.type):
+                        outputs = model(images)
+                        loss = criterion(outputs, labels)
+                else:
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
 
                 val_loss += loss.item()
                 _, predicted = outputs.max(1)
@@ -156,8 +198,18 @@ def train_fold(
         train_history['val_loss'].append(val_loss)
         train_history['val_acc'].append(val_acc)
 
-        if val_acc > best_val_acc:
+        # 早停检查
+        if val_acc > best_val_acc + early_stopping_delta:
             best_val_acc = val_acc
+            best_epoch = epoch + 1
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= early_stopping_patience:
+            print(f"    Fold {fold+1}: Early stopping at epoch {epoch+1}")
+            early_stopped = True
+            break
 
         if (epoch + 1) % 10 == 0:
             print(f"    Fold {fold+1}, Epoch {epoch+1}/{epochs}: "
@@ -193,12 +245,22 @@ def train_fold(
     np.save(out_dir / f"fold_{fold+1}_y_pred.npy", all_preds)
     np.save(out_dir / f"fold_{fold+1}_y_prob.npy", all_probs)
 
+    # 计算完整指标（包含曲线数据）
     metrics = compute_metrics(all_labels, all_preds, all_probs)
+    
+    # 保存曲线数据和混淆矩阵
+    metrics.save_curves(str(out_dir), prefix=f"fold_{fold+1}_")
 
     val_metrics = {
         'accuracy': metrics.accuracy,
         'macro_f1': metrics.f1_macro,
+        'weighted_f1': metrics.f1_weighted,
         'auc_roc': metrics.auc_roc_ovr,
+        'auc_roc_ovo': metrics.auc_roc_ovo,
+        'precision_per_class': metrics.precision,
+        'recall_per_class': metrics.sensitivity,
+        'specificity_per_class': metrics.specificity,
+        'auc_per_class': metrics.auc_per_class,
     }
 
     return train_history, val_metrics, training_time
@@ -302,13 +364,14 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
             shuffle=False, num_workers=config.num_workers, pin_memory=True
         )
 
-        # 创建模型 (使用统一 HybridModel)
+        # 创建模型 (使用统一 HybridModel，加载预训练权重)
         model = HybridModel(
             num_classes=config.num_classes,
-            model_dim=512,
-            nhead=8,
-            num_layers=6,
-            dropout=0.1
+            model_dim=768,
+            nhead=12,
+            num_layers=12,
+            dropout=0.1,
+            pretrained=True
         )
 
         # 训练
@@ -323,7 +386,13 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
             'fold': fold_idx + 1,
             'val_accuracy': val_metrics['accuracy'],
             'val_f1': val_metrics['macro_f1'],
+            'val_weighted_f1': val_metrics['weighted_f1'],
             'val_auc': val_metrics['auc_roc'],
+            'val_auc_ovo': val_metrics['auc_roc_ovo'],
+            'val_precision_per_class': val_metrics['precision_per_class'],
+            'val_recall_per_class': val_metrics['recall_per_class'],
+            'val_specificity_per_class': val_metrics['specificity_per_class'],
+            'val_auc_per_class': val_metrics['auc_per_class'],
             'training_time': training_time
         }
         fold_results.append(fold_result)
@@ -341,8 +410,24 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
 
     val_accs = [r['val_accuracy'] for r in fold_results]
     val_f1s = [r['val_f1'] for r in fold_results]
+    val_weighted_f1s = [r['val_weighted_f1'] for r in fold_results]
     val_aucs = [r['val_auc'] for r in fold_results]
+    val_aucs_ovo = [r['val_auc_ovo'] for r in fold_results]
     times = [r['training_time'] for r in fold_results]
+
+    # 计算每类指标的均值和标准差
+    num_classes = len(fold_results[0]['val_precision_per_class'])
+    precision_per_class = {i: [] for i in range(num_classes)}
+    recall_per_class = {i: [] for i in range(num_classes)}
+    specificity_per_class = {i: [] for i in range(num_classes)}
+    auc_per_class = {i: [] for i in range(num_classes)}
+    
+    for r in fold_results:
+        for i in range(num_classes):
+            precision_per_class[i].append(r['val_precision_per_class'][i])
+            recall_per_class[i].append(r['val_recall_per_class'][i])
+            specificity_per_class[i].append(r['val_specificity_per_class'][i])
+            auc_per_class[i].append(r['val_auc_per_class'][i])
 
     summary = {
         'val_accuracy': {
@@ -355,9 +440,23 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
             'mean': np.mean(val_f1s),
             'std': np.std(val_f1s)
         },
+        'val_weighted_f1': {
+            'mean': np.mean(val_weighted_f1s),
+            'std': np.std(val_weighted_f1s)
+        },
         'val_auc': {
             'mean': np.mean(val_aucs),
             'std': np.std(val_aucs)
+        },
+        'val_auc_ovo': {
+            'mean': np.mean(val_aucs_ovo),
+            'std': np.std(val_aucs_ovo)
+        },
+        'per_class_metrics': {
+            'precision': {str(i): {'mean': np.mean(v), 'std': np.std(v)} for i, v in precision_per_class.items()},
+            'recall': {str(i): {'mean': np.mean(v), 'std': np.std(v)} for i, v in recall_per_class.items()},
+            'specificity': {str(i): {'mean': np.mean(v), 'std': np.std(v)} for i, v in specificity_per_class.items()},
+            'auc': {str(i): {'mean': np.mean(v), 'std': np.std(v)} for i, v in auc_per_class.items()},
         },
         'total_training_time': np.sum(times),
         'avg_fold_time': np.mean(times)
@@ -438,17 +537,25 @@ def run_cross_validation_experiment(config: CrossValidationConfig):
     # 绘制训练曲线（各折平均）
     combined_history = {}
     if all_histories:
-        for key in all_histories[0].keys():
-            min_len = min(len(h[key]) for h in all_histories)
-            combined_history[key] = [
-                sum(h[key][i] for h in all_histories) / len(all_histories)
-                for i in range(min_len)
-            ]
+        # 提取所有折的训练历史（去掉fold键）
+        histories = [list(h.values())[0] for h in all_histories]
+        if histories:
+            # 获取所有指标键
+            all_keys = histories[0].keys()
+            for key in all_keys:
+                # 找到最短的历史长度
+                min_len = min(len(h[key]) for h in histories)
+                if min_len > 0:
+                    combined_history[key] = [
+                        sum(h[key][i] for h in histories) / len(histories)
+                        for i in range(min_len)
+                    ]
 
-    fig = plot_training_curves(
-        metrics_dict=combined_history,
-        save_path=str(output_dir / "cross_validation_curves.png")
-    )
+    if combined_history:
+        fig = plot_training_curves(
+            metrics_dict=combined_history,
+            save_path=str(output_dir / "cross_validation_curves.png")
+        )
 
     print("\n" + "="*60)
     print("交叉验证实验完成!")

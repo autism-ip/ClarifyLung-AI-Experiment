@@ -28,7 +28,7 @@ from sklearn.metrics import (
 @dataclass(frozen=True)
 class EvaluationMetrics:
     """
-    多分类评估指标数据类
+    多分类评估指标数据类 - 扩展版本
 
     Attributes:
         accuracy: 准确率 (0-1)
@@ -41,6 +41,9 @@ class EvaluationMetrics:
         specificity: 每类特异度列表 [class_0, class_1, ...]
         precision: 每类精确度列表 [class_0, class_1, ...]
         confusion_matrix: 混淆矩阵 (numpy.ndarray)
+        roc_curve_data: ROC曲线数据 {class_idx: {'fpr': [...], 'tpr': [...], 'thresholds': [...]}}
+        pr_curve_data: PR曲线数据 {class_idx: {'precision': [...], 'recall': [...], 'thresholds': [...]}}
+        auc_per_class: 每类AUC分数 [class_0_auc, class_1_auc, ...]
     """
     accuracy: float = 0.0
     f1_macro: float = 0.0
@@ -52,6 +55,11 @@ class EvaluationMetrics:
     specificity: List[float] = field(default_factory=list)
     precision: List[float] = field(default_factory=list)
     confusion_matrix: Optional[np.ndarray] = None
+    
+    # 扩展：曲线数据
+    roc_curve_data: Optional[Dict[str, Dict]] = None
+    pr_curve_data: Optional[Dict[str, Dict]] = None
+    auc_per_class: List[float] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, float]:
         """转换为扁平字典 (用于日志/保存)"""
@@ -70,7 +78,32 @@ class EvaluationMetrics:
             result[f'specificity_class_{idx}'] = spec
         for idx, prec in enumerate(self.precision):
             result[f'precision_class_{idx}'] = prec
+        # 每类AUC
+        for idx, auc_val in enumerate(self.auc_per_class):
+            result[f'auc_class_{idx}'] = auc_val
         return result
+    
+    def save_curves(self, output_dir: str, prefix: str = ""):
+        """保存曲线数据到目录"""
+        import json
+        from pathlib import Path
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # 保存ROC曲线数据
+        if self.roc_curve_data:
+            with open(output_path / f"{prefix}roc_curves.json", 'w') as f:
+                json.dump(self.roc_curve_data, f)
+        
+        # 保存PR曲线数据
+        if self.pr_curve_data:
+            with open(output_path / f"{prefix}pr_curves.json", 'w') as f:
+                json.dump(self.pr_curve_data, f)
+        
+        # 保存混淆矩阵
+        if self.confusion_matrix is not None:
+            np.save(output_path / f"{prefix}confusion_matrix.npy", self.confusion_matrix)
 
 
 # =============================================================================
@@ -121,7 +154,7 @@ def _compute_auc_scores(
     num_classes: int
 ) -> tuple:
     """
-    计算ROC-AUC (OvR and OvO)
+    计算ROC-AUC (OvR and OvO) 及曲线数据
 
     Args:
         targets: 标签 (n_samples,)
@@ -129,17 +162,38 @@ def _compute_auc_scores(
         num_classes: 类别数
 
     Returns:
-        (auc_roc_ovr, auc_roc_ovo)
+        (auc_roc_ovr, auc_roc_ovo, auc_per_class, roc_curve_data)
     """
+    from sklearn.metrics import precision_recall_curve as pr_curve_func
+    
     # One-hot编码
     targets_onehot = np.eye(num_classes)[targets]
 
     auc_roc_ovr_list = []
     auc_roc_ovo_list = []
+    roc_curve_data = {}
+    pr_curve_data = {}
+    auc_per_class = []
 
     for i in range(num_classes):
-        fpr, tpr, _ = roc_curve(targets_onehot[:, i], probs[:, i])
-        auc_roc_ovr_list.append(auc(fpr, tpr))
+        # ROC曲线数据
+        fpr, tpr, thresholds = roc_curve(targets_onehot[:, i], probs[:, i])
+        auc_val = auc(fpr, tpr)
+        auc_roc_ovr_list.append(auc_val)
+        auc_per_class.append(auc_val)
+        roc_curve_data[str(i)] = {
+            'fpr': fpr.tolist(),
+            'tpr': tpr.tolist(),
+            'thresholds': thresholds.tolist()
+        }
+        
+        # PR曲线数据
+        precision, recall, pr_thresholds = pr_curve_func(targets_onehot[:, i], probs[:, i])
+        pr_curve_data[str(i)] = {
+            'precision': precision.tolist(),
+            'recall': recall.tolist(),
+            'thresholds': pr_thresholds.tolist()
+        }
 
     # OvR: macro average
     auc_roc_ovr = np.mean(auc_roc_ovr_list)
@@ -162,7 +216,7 @@ def _compute_auc_scores(
 
     auc_roc_ovo = np.mean(auc_roc_ovo_list) if auc_roc_ovo_list else 0.0
 
-    return auc_roc_ovr, auc_roc_ovo
+    return auc_roc_ovr, auc_roc_ovo, auc_per_class, roc_curve_data, pr_curve_data
 
 
 # =============================================================================
@@ -228,10 +282,13 @@ def compute_metrics(
 
     # 计算AUC
     try:
-        auc_roc_ovr, auc_roc_ovo = _compute_auc_scores(targets, probs, num_classes)
+        auc_roc_ovr, auc_roc_ovo, auc_per_class, roc_curve_data, pr_curve_data = _compute_auc_scores(targets, probs, num_classes)
     except Exception:
         auc_roc_ovr = 0.0
         auc_roc_ovo = 0.0
+        auc_per_class = []
+        roc_curve_data = {}
+        pr_curve_data = {}
 
     return EvaluationMetrics(
         accuracy=accuracy,
@@ -244,6 +301,9 @@ def compute_metrics(
         specificity=specificity,
         precision=precision,
         confusion_matrix=cm,
+        roc_curve_data=roc_curve_data,
+        pr_curve_data=pr_curve_data,
+        auc_per_class=auc_per_class,
     )
 
 

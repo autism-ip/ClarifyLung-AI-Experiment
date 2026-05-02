@@ -37,10 +37,11 @@ class ConfigurableHybrid(nn.Module):
         transformer: bool = True,
         cross_attention: bool = True,
         num_classes: int = 3,
-        model_dim: int = 512,
-        nhead: int = 8,
-        num_layers: int = 6,
-        dropout: float = 0.1
+        model_dim: int = 768,
+        nhead: int = 12,
+        num_layers: int = 12,
+        dropout: float = 0.1,
+        pretrained: bool = True
     ):
         super().__init__()
 
@@ -56,7 +57,8 @@ class ConfigurableHybrid(nn.Module):
             dropout=dropout,
             num_classes=num_classes,
             use_transformer=transformer,
-            use_cross_attention=cross_attention
+            use_cross_attention=cross_attention,
+            pretrained=pretrained
         )
 
     def forward(self, x):

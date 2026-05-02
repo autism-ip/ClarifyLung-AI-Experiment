@@ -164,6 +164,7 @@ def download_dataset(slug: str, target: Path, force: bool = False) -> bool:
 
     [OUTPUT]: bool - 下载是否成功
     """
+    import time
     target = Path(target)
 
     # 检查是否已存在且非强制下载
@@ -175,8 +176,14 @@ def download_dataset(slug: str, target: Path, force: bool = False) -> bool:
     # 创建目标目录
     target.mkdir(parents=True, exist_ok=True)
 
+    print(f"\n{'='*60}")
     print(f"[DOWNLOAD] 开始下载: {slug}")
     print(f"[TARGET] 目标路径: {target}")
+    print(f"[START] 开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"{'='*60}")
+    print(f"[INFO] kagglehub 将显示下载进度条...")
+    print(f"[INFO] 请等待下载完成，期间请勿中断程序")
+    print()
 
     try:
         import kagglehub
@@ -189,6 +196,7 @@ def download_dataset(slug: str, target: Path, force: bool = False) -> bool:
 
             # 如果下载的内容是目录且与target不同，则移动
             if downloaded_path != target:
+                print(f"\n[MOVE] 正在移动文件到目标目录...")
                 # 移动所有内容到目标目录
                 for item in downloaded_path.iterdir():
                     dest = target / item.name
@@ -197,14 +205,17 @@ def download_dataset(slug: str, target: Path, force: bool = False) -> bool:
                     else:
                         shutil.copy2(item, dest)
 
+            print(f"\n{'='*60}")
             print(f"[SUCCESS] 下载完成: {slug}")
+            print(f"[END] 结束时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{'='*60}")
             return True
         else:
-            print(f"[ERROR] 下载失败: kagglehub返回无效路径")
+            print(f"\n[ERROR] 下载失败: kagglehub返回无效路径")
             return False
 
     except Exception as e:
-        print(f"[ERROR] 下载异常: {e}")
+        print(f"\n[ERROR] 下载异常: {e}")
         return False
 
 

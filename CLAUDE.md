@@ -88,6 +88,8 @@ Python + PyTorch + torchvision + timm + albumentations
 │   ├── figures/        # 可视化图表
 │   └── slurm/          # SLURM作业日志
 ├── docs/              # 文档资料模块
+│   ├── cluster_deployment_guide.md  # 集群部署经验文档
+│   └── experiment_data_optimization.md  # 实验数据保存优化方案
 ├── model.py           # 兼容入口，从 models 包 re-export
 ├── requirements.txt   # Python依赖
 ├── DEPLOY.md          # 远程服务器部署指南
@@ -268,9 +270,33 @@ test_results = trainer.evaluate(test_loader)
 - [x] 实验脚本统一架构 (benchmark/ablation/crossval 共享 models.HybridModel)
 - [x] 公共工具提取 (`scripts/utils.py`)
 
+### 新完成模块 🆕
+- [x] 预训练权重支持 (ResNet50 + ViT-B/16)
+  - [x] CNN backbone 加载 ImageNet 预训练权重
+  - [x] Transformer 加载 ViT-B/16 预训练权重 (patch embedding + encoder)
+  - [x] 维度对齐：model_dim=768, nhead=12, num_layers=12
+- [x] 实验数据保存扩展 (`experiments/metrics.py`)
+  - [x] ROC 曲线数据 (每类 fpr/tpr)
+  - [x] PR 曲线数据 (每类 precision/recall)
+  - [x] 混淆矩阵 (numpy 保存)
+  - [x] 每类指标：precision, recall, specificity, AUC
+- [x] 消融实验配置扩展 (`experiments/ablation/configs.py`)
+  - [x] 17 个配置，7 个分组 (正向/反向/超参数/门控类型)
+- [x] 训练优化 (`scripts/utils.py`)
+  - [x] 早停机制 (patience=10, delta=0.001)
+  - [x] 学习率预热 (5 epochs linear warmup)
+  - [x] 梯度裁剪 (max_norm=1.0)
+  - [x] 检查点保存路径自动创建
+- [x] SLURM 脚本健壮性
+  - [x] `--exclude=gpu01` 排除 ECC 错误节点
+  - [x] 输出目录使用 Job ID 命名，防覆盖
+- [x] 集群部署文档 (`docs/cluster_deployment_guide.md`)
+- [x] 实验数据保存优化方案 (`docs/experiment_data_optimization.md`)
+
 ### 待实现模块 📋
 - [ ] 数据探索与预处理实验 (`data/visualization.py` 扩展)
 - [ ] 端到端训练脚本 (`scripts/train.py`)
+- [ ] 实验结果可视化 (`scripts/visualize_experiment_results.py` 集成到工作流)
 
 ## 实验方案
 
@@ -308,6 +334,68 @@ test_results = trainer.evaluate(test_loader)
 - CUDA 11.8+ (推荐使用GPU)
 - 16GB+ RAM
 - 50GB+ 磁盘空间（数据集）
+
+### 集群环境部署
+
+#### 1. Conda环境配置
+```bash
+# 创建环境
+conda create -n lung_cancer python=3.10 -y
+conda activate lung_cancer
+
+# 安装PyTorch (CUDA 11.8)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# 安装项目依赖
+pip install -r requirements.txt
+
+# 安装Kaggle工具
+pip install kagglehub kaggle
+```
+
+#### 2. Kaggle凭证配置
+```bash
+mkdir -p ~/.kaggle
+cp /path/to/kaggle.json ~/.kaggle/
+chmod 600 ~/.kaggle/kaggle.json
+python scripts/download_datasets.py --check-credentials
+```
+
+#### 3. 数据集下载
+```bash
+# 下载所有数据集
+python scripts/download_datasets.py --cleanup
+
+# 验证数据集
+python scripts/download_datasets.py --validate-only
+```
+
+#### 4. 预训练模型下载（计算节点无外网）
+```bash
+# 在登录节点预先下载
+source activate lung_cancer
+python -c "
+from torchvision import models
+models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT)
+"
+```
+
+#### 5. SLURM作业提交
+```bash
+# 快速验证
+sbatch scripts/submit_verify.sh
+
+# 完整实验
+sbatch scripts/submit_benchmark.sh    # 24h
+sbatch scripts/submit_ablation.sh     # 48h
+sbatch scripts/submit_crossval.sh     # 72h
+
+# 快速测试模式
+sbatch scripts/submit_benchmark.sh --quick-test
+```
+
+**集群配置说明**: 详见 `docs/cluster_deployment_guide.md`
 
 ### 远程服务器部署步骤
 
@@ -348,7 +436,7 @@ from model import HybridModel
 | `training/trainer.py` | 完整训练流程 (差分LR/AMP/早停) |
 | `models/hybrid_model.py` | CNN-Transformer混合模型 (支持消融开关) |
 | `models/configurable_hybrid.py` | 消融实验适配器 (ConfigurableHybrid) |
-| `experiments/metrics.py` | 评估指标计算 |
+| `experiments/metrics.py` | 评估指标计算 (支持ROC/PR曲线数据) |
 | `experiments/benchmark/models.py` | 基准模型工厂 (ResNet/ViT/HybridBasic) |
 | `experiments/ablation/configs.py` | 消融配置定义 |
 | `experiments/cross_validation/validator.py` | K折交叉验证 |
@@ -359,6 +447,8 @@ from model import HybridModel
 | `scripts/submit_benchmark.sh` | SLURM: 基准实验提交 |
 | `scripts/submit_ablation.sh` | SLURM: 消融实验提交 |
 | `scripts/submit_crossval.sh` | SLURM: 交叉验证提交 |
+| `scripts/submit_verify.sh` | SLURM: 环境验证提交 |
+| `scripts/submit_all_quick.sh` | SLURM: 并行提交三个实验 |
 | `scripts/submit_visualize_results.sh` | SLURM: 实验结果可视化提交 (1h, CPU分区) |
 | `scripts/submit_visualize_gradcam.sh` | SLURM: Grad-CAM可视化提交 (15min, GPU分区) |
 | `scripts/submit_visualize_attention.sh` | SLURM: Attention可视化提交 (15min, GPU分区) |
@@ -370,6 +460,8 @@ from model import HybridModel
 | `requirements.txt` | Python依赖列表 |
 | `DEPLOY.md` | 远程服务器部署指南 |
 | `README.md` | 项目说明与复刻指南 |
+| `docs/cluster_deployment_guide.md` | 集群部署经验文档 |
+| `docs/experiment_data_optimization.md` | 实验数据保存优化方案 |
 
 ## 引用
 

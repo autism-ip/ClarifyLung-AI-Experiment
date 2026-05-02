@@ -9,6 +9,10 @@
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+import os
+# 设置HuggingFace镜像（解决网络问题）
+os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
+
 import sys
 import json
 import time
@@ -79,17 +83,17 @@ class BenchmarkExperimentConfig:
 # 模型工厂
 # =============================================================================
 
-def create_model(model_name: str, num_classes: int, pretrained: bool = True):
-    """创建基准模型"""
+def create_model(model_name: str, num_classes: int, pretrained: bool = False):
+    """创建基准模型（默认不使用预训练权重，公平对比）"""
     if model_name == 'resnet50':
-        return create_resnet50(num_classes=num_classes)
+        return create_resnet50(num_classes=num_classes, pretrained=pretrained)
     elif model_name == 'vit':
-        return create_vit(num_classes=num_classes)
+        return create_vit(num_classes=num_classes, pretrained=pretrained)
     elif model_name == 'hybrid_basic':
-        return create_hybrid_basic(num_classes=num_classes)
+        return create_hybrid_basic(num_classes=num_classes, pretrained=pretrained)
     elif model_name == 'hybrid_advanced':
         # 使用 models/HybridModel 作为完整混合架构
-        return HybridModel(num_classes=num_classes)
+        return HybridModel(num_classes=num_classes, pretrained=pretrained)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -136,7 +140,7 @@ def evaluate_model(
     save_dir: str = None,
     prefix: str = ""
 ) -> dict:
-    """在测试集上评估模型，可选保存预测数组供可视化CLI复用"""
+    """在测试集上评估模型，保存完整实验数据"""
 
     model.eval()
     all_preds = []
@@ -162,12 +166,18 @@ def evaluate_model(
     if save_dir:
         save_path = Path(save_dir)
         save_path.mkdir(parents=True, exist_ok=True)
+        
+        # 保存基础预测数据
         np.save(save_path / f"{prefix}y_true.npy", all_labels)
         np.save(save_path / f"{prefix}y_pred.npy", all_preds)
         np.save(save_path / f"{prefix}y_prob.npy", all_probs)
 
-    # 计算各项指标
+    # 计算各项指标（包含曲线数据）
     metrics = compute_metrics(all_labels, all_preds, all_probs)
+    
+    # 保存曲线数据和混淆矩阵
+    if save_dir:
+        metrics.save_curves(save_dir, prefix=prefix)
 
     return metrics
 
@@ -249,18 +259,26 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
 
     device = get_device()
 
-    # 定义要对比的模型 (快速测试模式只跑 Hybrid-Advanced)
+    # 定义要对比的模型 (所有模型均使用预训练权重)
+    all_models = [
+        ('resnet50', 'ResNet50', True),
+        ('vit', 'ViT-B/16', True),
+        ('hybrid_basic', 'Hybrid-Basic', True),
+        ('hybrid_advanced', 'Hybrid-Advanced', True),
+    ]
+    
     if config.quick_test:
         models_to_compare = [
-            ('hybrid_advanced', 'Hybrid-Advanced', False),
+            ('hybrid_advanced', 'Hybrid-Advanced', True),
         ]
+    elif hasattr(config, 'model_filter') and config.model_filter and config.model_filter != 'all':
+        # 支持 --model 参数指定单个模型
+        models_to_compare = [m for m in all_models if m[0] == config.model_filter]
+        if not models_to_compare:
+            print(f"[ERROR] Unknown model: {config.model_filter}")
+            sys.exit(1)
     else:
-        models_to_compare = [
-            ('resnet50', 'ResNet50', True),
-            ('vit', 'ViT-B/16', True),
-            ('hybrid_basic', 'Hybrid-Basic', False),
-            ('hybrid_advanced', 'Hybrid-Advanced', False),
-        ]
+        models_to_compare = all_models
 
     results = []
     all_histories = {}
@@ -272,6 +290,14 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
         print(f"\n--- Training {model_name} ---")
 
         model = create_model(model_key, config.num_classes, use_pretrained)
+        
+        # 收集模型信息
+        model_info = {
+            'model_name': model_name,
+            'model_key': model_key,
+            'parameters': sum(p.numel() for p in model.parameters()),
+            'trainable_parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
+        }
 
         start_time = time.time()
         result = train_single_model(
@@ -290,19 +316,38 @@ def run_benchmark_experiment(config: BenchmarkExperimentConfig):
             save_dir=config.output_dir,
             prefix=f"{model_name}_"
         )
+        
+        # 计算推理时间
+        inference_start = time.time()
+        with torch.no_grad():
+            dummy_input = torch.randn(1, 3, 224, 224).to(device)
+            for _ in range(100):
+                model(dummy_input)
+        inference_time = (time.time() - inference_start) / 100 * 1000  # ms per sample
 
-        # 保存结果
+        # 保存完整结果
         model_result = {
             'model_name': model_name,
             'accuracy': test_metrics.accuracy,
             'macro_f1': test_metrics.f1_macro,
+            'weighted_f1': test_metrics.f1_weighted,
             'auc_roc': test_metrics.auc_roc_ovr,
-            'precision': float(np.mean(test_metrics.precision)) if test_metrics.precision else None,
-            'recall': float(np.mean(test_metrics.sensitivity)) if test_metrics.sensitivity else None,
+            'auc_roc_ovo': test_metrics.auc_roc_ovo,
+            'precision_per_class': test_metrics.precision,
+            'recall_per_class': test_metrics.sensitivity,
+            'specificity_per_class': test_metrics.specificity,
+            'auc_per_class': test_metrics.auc_per_class,
             'training_time': training_time,
+            'inference_time_ms': inference_time,
+            'model_info': model_info,
         }
         results.append(model_result)
         all_histories[model_name] = result['train_history']
+        
+        # 保存模型信息
+        model_info_path = Path(config.output_dir) / f"{model_name}_model_info.json"
+        with open(model_info_path, 'w') as f:
+            json.dump(model_info, f, indent=2)
 
         print(f"  {model_name} Test Acc: {test_metrics.accuracy:.4f}, "
               f"F1: {test_metrics.f1_macro:.4f}, AUC: {test_metrics.auc_roc_ovr:.4f}")
@@ -385,6 +430,8 @@ def main():
     parser.add_argument('--no-checkpoint', action='store_true', help='不保存模型权重')
     parser.add_argument('--no-plot', action='store_true', help='不生成图表')
     parser.add_argument('--quick-test', action='store_true', help='快速测试模式: 200样本, 1epoch, 仅跑Hybrid')
+    parser.add_argument('--model', type=str, choices=['resnet50', 'vit', 'hybrid_basic', 'hybrid_advanced', 'all'], 
+                        default='all', help='指定运行单个模型或全部')
 
     args = parser.parse_args()
 
@@ -407,6 +454,7 @@ def main():
     config.save_checkpoints = not args.no_checkpoint
     config.save_plots = not args.no_plot
     config.quick_test = args.quick_test
+    config.model_filter = args.model  # 支持指定单个模型
 
     # 运行实验
     run_benchmark_experiment(config)

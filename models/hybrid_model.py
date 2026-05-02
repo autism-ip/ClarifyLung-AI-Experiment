@@ -3,6 +3,8 @@
  * [OUTPUT]: 对外提供 HybridModel
  * [POS]: models/ 的核心模型组装器，组合所有组件构成完整 CNN-Transformer 混合模型
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+ 支持预训练权重加载: CNN (ResNet50) 和 Transformer (ViT-B/16) 均可加载预训练权重
 """
 
 import torch
@@ -35,20 +37,24 @@ class HybridModel(nn.Module):
         backbone_model=None,
         feature_layers=None,
         gate_type='se',
-        model_dim=512,
-        nhead=8,
-        num_layers=6,
+        model_dim=768,  # 改为768以匹配预训练ViT-B/16的维度
+        nhead=12,       # 改为12以匹配预训练ViT-B/16
+        num_layers=12,  # 改为12以匹配预训练ViT-B/16
         dropout=0.1,
         num_classes=3,
         backbone_name='resnet50',
         use_transformer=True,
-        use_cross_attention=True
+        use_cross_attention=True,
+        pretrained=True  # 默认使用预训练权重
     ):
         super().__init__()
         if feature_layers is None:
             feature_layers = ['layer3', 'layer4']
         if backbone_model is None:
-            backbone_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+            if pretrained:
+                backbone_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+            else:
+                backbone_model = models.resnet50(weights=None)
 
         self.use_transformer = use_transformer
         self.use_cross_attention = use_cross_attention
@@ -82,6 +88,67 @@ class HybridModel(nn.Module):
                 nhead=nhead,
                 num_layers=num_layers
             )
+            
+            # 加载预训练ViT-B/16权重到Transformer部分
+            if pretrained:
+                try:
+                    print("[INFO] 加载预训练ViT-B/16权重到Transformer...")
+                    vit_pretrained = models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT)
+                    
+                    # 1. 加载patch embedding权重
+                    # ViT的patch_embed.proj: [768, 3, 16, 16]
+                    # 我们的projection: nn.Linear(768, 768)
+                    with torch.no_grad():
+                        # 将卷积权重转换为线性层权重
+                        vit_proj_weight = vit_pretrained.conv_proj.weight  # [768, 3, 16, 16]
+                        vit_proj_bias = vit_pretrained.conv_proj.bias    # [768]
+                        # reshape: [768, 3*16*16] = [768, 768]
+                        vit_proj_weight_flat = vit_proj_weight.view(vit_proj_weight.size(0), -1)
+                        
+                        if model_dim == 768:
+                            self.image_patch_extractor.projection.weight.copy_(vit_proj_weight_flat)
+                            if vit_proj_bias is not None:
+                                self.image_patch_extractor.projection.bias.copy_(vit_proj_bias)
+                        else:
+                            print(f"[WARNING] 模型维度{model_dim}与ViT-B/16维度768不匹配，跳过patch embedding权重加载")
+                    
+                    # 2. 加载Transformer encoder权重
+                    vit_state = vit_pretrained.encoder.state_dict()
+                    our_state = self.transformer_encoder.transformer.state_dict()
+                    
+                    # 检查层数是否匹配
+                    vit_layers = len(vit_pretrained.encoder.layers)
+                    our_layers = num_layers
+                    
+                    if vit_layers == our_layers and model_dim == 768:
+                        # 直接加载所有权重
+                        self.transformer_encoder.transformer.load_state_dict(vit_state)
+                        print(f"[INFO] 成功加载ViT-B/16全部{vit_layers}层Transformer权重")
+                    elif model_dim == 768:
+                        # 层数不匹配，加载前our_layers层
+                        our_state_filtered = {}
+                        for key, value in vit_state.items():
+                            if key.startswith('layers.'):
+                                layer_idx = int(key.split('.')[1])
+                                if layer_idx < our_layers:
+                                    our_state_filtered[key] = value
+                            else:
+                                our_state_filtered[key] = value
+                        
+                        missing, unexpected = self.transformer_encoder.transformer.load_state_dict(our_state_filtered, strict=False)
+                        if missing:
+                            print(f"[WARNING] 缺失权重: {missing}")
+                        if unexpected:
+                            print(f"[WARNING] 多余权重: {unexpected}")
+                        print(f"[INFO] 加载ViT-B/16前{min(vit_layers, our_layers)}层Transformer权重")
+                    else:
+                        print(f"[WARNING] 模型维度不匹配，无法加载预训练Transformer权重")
+                        
+                except Exception as e:
+                    print(f"[WARNING] 加载预训练ViT权重失败: {e}")
+                    print("[INFO] 继续使用随机初始化")
+        
+        self.cnn_to_seq = nn.Linear(self.fused_channels, model_dim)
 
         self.cnn_to_seq = nn.Linear(self.fused_channels, model_dim)
 
